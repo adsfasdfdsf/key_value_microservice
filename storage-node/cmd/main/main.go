@@ -1,8 +1,4 @@
-package storage_node
-
-import(
-
-)
+package main
 
 func main() {
 	
