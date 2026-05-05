@@ -71,7 +71,7 @@ func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
 		return
 	}
 	var restRequest models.RestMessage
-	err = json.Unmarshal(request, restRequest)
+	err = json.Unmarshal(request, &restRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Wrong Request Format"))
