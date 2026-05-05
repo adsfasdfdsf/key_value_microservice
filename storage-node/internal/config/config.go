@@ -2,8 +2,8 @@ package config
 
 import (
 	"context"
-	"fmt"
 	"github.com/ilyakaznacheev/cleanenv"
+	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
 )
 
 type ROLE string
@@ -19,12 +19,12 @@ type Config struct{
 }
 
 func New(ctx context.Context) *Config{
-	cfg := Config{}
-
+	cfg := &Config{}
+	log := logger.GetLogger(ctx)
 	err := cleanenv.ReadEnv(cfg)
 	if err != nil {
-		fmt.Errorf("%v", err)
+		log.Error(ctx, err.Error())
 	}
-	return &cfg
+	return cfg
 }
 

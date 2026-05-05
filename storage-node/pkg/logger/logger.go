@@ -42,7 +42,7 @@ func (l logger) Error(ctx context.Context, msg string, fields ...zap.Field) {
 }
 
 func New(serviceName string) Logger {
-	zapLogger, _ := zap.NewProduction()
+	zapLogger, _ := zap.NewDevelopment()
 	defer zapLogger.Sync()
 	return &logger{
 		serviceName: serviceName,
