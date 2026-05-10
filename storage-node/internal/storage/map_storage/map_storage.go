@@ -14,8 +14,8 @@ type MapStorage struct {
 
 func (m *MapStorage) Add(key, value string) error {
 	m.mut.Lock()
+	defer m.mut.Unlock()
 	m.storage[key] = value;
-	m.mut.Unlock()
 	return nil
 }
 
