@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"bytes"
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/models"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/transport/grpc"
@@ -61,6 +62,9 @@ func (m *Master) sendToReplicas(handler func(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			log.Error(m.ctx, "Failed to send request to replicas")
 		}
+
+		r.Body = io.NopCloser(bytes.NewReader(request))
+
 		handler(w, r)
 	}
 }

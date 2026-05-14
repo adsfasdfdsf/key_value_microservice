@@ -25,9 +25,6 @@ type Node interface {
 }
 
 func main() {
-	os.Setenv("REST_PORT", "7070")
-	os.Setenv("GRPC_PORT", "4040")
-	os.Setenv("ROLE", "replica")
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, logger.LoggerKey, logger.New(serviceName))
 	cfg := config.New(ctx)
@@ -43,8 +40,8 @@ func main() {
 	switch cfg.ROLE {
 	case config.MASTER:
 		mc := grpc.NewMulticlient()
-		mc.AddClient(grpc.Client{Address: "localhost:4040"})
-		mc.AddClient(grpc.Client{Address: "localhost:4041"})
+		mc.AddClient(grpc.Client{Address: "replica1:4040"})
+		mc.AddClient(grpc.Client{Address: "replica2:4040"})
 		node = nodeServer.NewMaster(ctx, restServer, mc)
 	case config.REPLICA:
 		grpcServer := grpc.NewServer(ctx, cfg.GrpcPort, repo)

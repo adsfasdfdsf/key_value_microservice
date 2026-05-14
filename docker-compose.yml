@@ -1,0 +1,48 @@
+services:
+  master:
+    build: ./storage-node
+    environment:
+      - ROLE=master
+      - REST_PORT=7070
+      - GRPC_PORT=0000
+    networks:
+      - default
+    depends_on:
+      - replica1
+      - replica2
+
+  replica1:
+    build: ./storage-node
+    environment:
+      - ROLE=replica
+      - REST_PORT=7070
+      - GRPC_PORT=4040
+    networks:
+      - default
+  
+  replica2:
+    build: ./storage-node
+    environment:
+      - ROLE=replica
+      - REST_PORT=7070
+      - GRPC_PORT=4040
+    networks:
+      - default
+  
+
+
+  nginx:
+      image: nginx
+      container_name: nginx-container
+      ports:
+        - "80:80"
+      volumes:
+        - ./storage-node/proxy/nginx.conf:/etc/nginx/conf.d/default.conf
+      depends_on:
+        - master
+        - replica1
+        - replica2
+
+
+networks:
+  default:
