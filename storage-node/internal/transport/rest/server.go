@@ -33,11 +33,12 @@ func New(c context.Context, p int, repository Repository) (*Server, error){
 	}, nil
 }
 
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context, 
+	sendToReplicas func(func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request)) error {
 	log := logger.GetLogger(ctx)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
-	mux.HandleFunc("POST /api/v1/addValue", s.addValue)
+	mux.HandleFunc("POST /api/v1/addValue", sendToReplicas(s.addValue))
 	s.serv = &http.Server{
 		Addr: 		fmt.Sprintf(":%d", s.port), 
 		Handler: 	mux,

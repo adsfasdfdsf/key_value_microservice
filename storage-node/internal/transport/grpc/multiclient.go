@@ -13,7 +13,7 @@ type Multiclient struct {
 	clients []Client
 }
 
-func New() *Multiclient{
+func NewMulticlient() *Multiclient{
 	return &Multiclient{
 		clients: make([]Client, 0),
 	}
@@ -30,7 +30,7 @@ func (mc *Multiclient) AppendValue(ctx context.Context, key, value string) error
 		eg.Go(func() error {
 			success, err := i.AppendValue(ctx, key, value)
 			if err != nil || success == false{
-				log.Error(ctx, fmt.Sprintf("Append value via grpc on server %v failed", i.address))
+				log.Error(ctx, fmt.Sprintf("Append value via grpc on server %v failed", i.Address))
 			}
 			return err
 		})

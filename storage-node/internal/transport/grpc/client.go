@@ -11,11 +11,11 @@ import (
 )
 
 type Client struct{
-	address string
+	Address string
 }
 
 func (cl *Client)AppendValue(ctx context.Context, key, value string) (bool, error){
-	conn, err := grpc.NewClient(cl.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	log := logger.GetLogger(ctx)
 	if err != nil {
 		log.Error(ctx, "grpc Client Dial Failed")

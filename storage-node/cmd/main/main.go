@@ -19,9 +19,15 @@ const (
 	serviceName = "node storage"
 )
 
+type Node interface {
+	Start() error
+	Stop() error
+}
+
 func main() {
 	os.Setenv("REST_PORT", "7070")
 	os.Setenv("GRPC_PORT", "4040")
+	os.Setenv("ROLE", "replica")
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, logger.LoggerKey, logger.New(serviceName))
 	cfg := config.New(ctx)
@@ -32,23 +38,33 @@ func main() {
 		mainLogger.Error(ctx, "Server creation failed")
 		return
 	}
-	grpcServer := grpc.NewServer(ctx, cfg.GrpcPort, repo)
+	var node Node
 
-	node_server := nodeServer.New(ctx, grpcServer, restServer, repo)
+	switch cfg.ROLE {
+	case config.MASTER:
+		mc := grpc.NewMulticlient()
+		mc.AddClient(grpc.Client{Address: "localhost:4040"})
+		mc.AddClient(grpc.Client{Address: "localhost:4041"})
+		node = nodeServer.NewMaster(ctx, restServer, mc)
+	case config.REPLICA:
+		grpcServer := grpc.NewServer(ctx, cfg.GrpcPort, repo)
+		node = nodeServer.NewReplica(ctx, grpcServer, restServer, repo)
+	}
 
 	graceCh := make(chan os.Signal, 1)
 	signal.Notify(graceCh, syscall.SIGINT, syscall.SIGTERM)
 
 
 	go func(){
-		if err := node_server.Start(ctx); err != nil {
+		mainLogger.Info(ctx, fmt.Sprintf("Starting %v server", cfg.ROLE))
+		if err := node.Start(); err != nil {
 			mainLogger.Error(ctx, err.Error())
 		}
 	}()
 
 	<- graceCh
 	
-	if err = node_server.Stop(ctx); err != nil {
+	if err = node.Stop(); err != nil {
 		mainLogger.Error(ctx, "Graceful shutdown failed")
 	}
 	fmt.Println("Server stopped")
