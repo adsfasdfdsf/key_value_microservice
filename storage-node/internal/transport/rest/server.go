@@ -43,8 +43,11 @@ func (s *Server) Start(ctx context.Context) error {
 		Handler: 	mux,
 	}
 	log.Info(ctx, fmt.Sprintf("Server Started on %d", s.port))
-	_ = s.serv.ListenAndServe()
-	return nil
+	err := s.serv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+        return err
+    }
+    return nil
 }
 
 func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request){

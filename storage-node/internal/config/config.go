@@ -15,6 +15,7 @@ const (
 
 type Config struct{
 	RestPort 	int 	`env:"REST_PORT" envDefault:"7070"`
+	GrpcPort 	int 	`env:"GRPC_PORT" envDefault:"4040"`
 	ROLE 		ROLE 	`env:"ROLE" envDefault:"replica"`	
 }
 
