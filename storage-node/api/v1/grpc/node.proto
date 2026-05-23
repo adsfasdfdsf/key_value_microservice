@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package node_v1;
+
+option go_package = "gitlab.com/adsfasdfdsf-group/key-value-service/storage-node/pkg/grpc/node_v1;node_v1";
+
+service NodeService {
+    rpc AppendValue(AppendValueRequest) returns (AppendValueResponse);
+}
+
+message AppendValueRequest {
+    string key = 1;
+    string value = 2;
+}
+
+message AppendValueResponse {
+    bool success = 1;
+}
