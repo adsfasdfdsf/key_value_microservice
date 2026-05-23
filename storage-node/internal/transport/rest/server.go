@@ -54,7 +54,7 @@ func (s *Server) Start(ctx context.Context,
 func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request){
 	key := r.PathValue("key")
 	log := logger.GetLogger(s.ctx)
-	log.Info(s.ctx, fmt.Sprintf("new Get value by key request %v", key))
+	log.Info(s.ctx, fmt.Sprintf("new Get value by key request %v", string(key)))
 	value, err := s.repo.Get(key)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
