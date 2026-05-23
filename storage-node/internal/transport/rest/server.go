@@ -80,7 +80,7 @@ func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request){
 func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
 	request, err := io.ReadAll(r.Body)
 	log := logger.GetLogger(s.ctx)
-	log.Info(s.ctx, fmt.Sprintf("new request %v", request))
+	log.Info(s.ctx, fmt.Sprintf("new request %v", string(request)))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		log.Error(s.ctx, "response failed")
