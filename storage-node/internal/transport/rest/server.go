@@ -58,7 +58,7 @@ func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request){
 	value, err := s.repo.Get(key)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
-		log.Error(s.ctx, "response repo error")
+		log.Warn(s.ctx, "response repo error")
 		w.Write([]byte("Key not found"))
 		return
 	}
@@ -83,7 +83,7 @@ func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
 	log.Info(s.ctx, fmt.Sprintf("new request %v", string(request)))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		log.Error(s.ctx, "response failed")
+		log.Warn(s.ctx, "response failed")
 		w.Write([]byte("Wrong Request Format"))
 		return
 	}
@@ -91,7 +91,7 @@ func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
 	err = json.Unmarshal(request, &restRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		log.Error(s.ctx, "response failed")
+		log.Warn(s.ctx, "response failed")
 		w.Write([]byte("Wrong Request Format"))
 		return
 	}

@@ -44,7 +44,7 @@ func (m *Master) sendToReplicas(handler func(w http.ResponseWriter, r *http.Requ
 		log := logger.GetLogger(m.ctx)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			log.Error(m.ctx, "response failed")
+			log.Warn(m.ctx, "response failed")
 			w.Write([]byte("Wrong Request Format"))
 			return
 		}
@@ -53,14 +53,14 @@ func (m *Master) sendToReplicas(handler func(w http.ResponseWriter, r *http.Requ
 		err = json.Unmarshal(request, &restRequest)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			log.Error(m.ctx, "response failed")
+			log.Warn(m.ctx, "response failed")
 			w.Write([]byte("Wrong Request Format"))
 			return
 		}
 
 		err = m.clients.AppendValue(m.ctx, restRequest.Key, restRequest.Value)
 		if err != nil {
-			log.Error(m.ctx, "Failed to send request to replicas")
+			log.Warn(m.ctx, "Failed to send request to replicas")
 		}
 
 		r.Body = io.NopCloser(bytes.NewReader(request))
