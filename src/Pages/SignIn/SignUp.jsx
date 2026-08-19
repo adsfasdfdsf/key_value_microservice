@@ -1,7 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import style from "./SignIn.module.css"
-import { Link } from "react-router-dom";
 
 export default function SignIn() {
     const [values, setValues] = useState({});
@@ -21,7 +19,8 @@ export default function SignIn() {
             alert("Passwords do not match");
             return;
         }
-
+        // API request класс на ооп в отдельном файле с запросами с инкапсуляцией сам url в .env
+        // fetch! или axios и в логин тож самое
         // TODO passwords do not match
         navigate("/");
     }
@@ -29,8 +28,6 @@ export default function SignIn() {
     return <>
                 <h2 className="text-[#518592] font-bold text-2xl">Sign in</h2>
                 <p className="text-[#518592] text-sm mt-4">If you are not a member, sign in</p>
-                
-                
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4" >
                     <input onChange={handleChange} className="p-2 mt-8 rounded-xl border placeholder:opacity-50 " type="email" placeholder="email@mail.com" name="email" required />
 
@@ -95,25 +92,3 @@ export default function SignIn() {
 
     </>
 }
-
-
-
-// return <div className={style.overlay}>
-//         <div className={style.login_form_container}>
-//                 <h2>Вход в аккаунт</h2>
-//                 <form onSubmit={handleSubmit} onReset={handleReset}>
-//                     <label htmlFor="login">Login:</label> 
-//                     <input onChange={handleChange} name="login" type="text" required />
-                    
-//                     <label htmlFor="login">Password:</label> 
-//                     <input onChange={handleChange} name="password" type="password" required />
-//                     <label htmlFor="login">Repeat Password:</label> 
-//                     <input onChange={handleChange} name="repeatPassword" type="password" required />
-//                     <div className={style.options_row}>
-//                     <label><input type="checkbox"/> Remember Me</label>
-//                     </div>
-//                     <button type="submit" className={style.button}>Login</button>    
-//                 </form>
-//             </div>
-//         </div>
-// }

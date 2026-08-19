@@ -19,8 +19,6 @@ export default function Login() {
     return <>
                 <h2 className="text-[#518592] font-bold text-2xl">Login</h2>
                 <p className="text-[#518592] text-sm mt-4">If you already a member, log in</p>
-                
-                
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4" >
                     <input onChange={handleChange} className="p-2 mt-8 rounded-xl border placeholder:opacity-50 " type="email" placeholder="email@mail.com" name="email" required />
 

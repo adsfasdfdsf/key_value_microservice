@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Login from "../Login/Login";
-import SignIn from "../SignIn/SignIn";
+import SignIn from "../SignIn/SignUp";
 
 export default function Home() {
   const [showRegister, setShowRegister] = useState(false);
