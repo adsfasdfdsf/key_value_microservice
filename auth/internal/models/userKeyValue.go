@@ -1,1 +1,10 @@
 package models
+
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type UserKeyValue struct {
+	UserKeyValue []KeyValue `json:"data"`
+}

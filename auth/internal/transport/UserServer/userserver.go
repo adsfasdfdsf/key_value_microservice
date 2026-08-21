@@ -3,6 +3,7 @@ package userserver
 import (
 	"auth/internal/authservice"
 	"auth/internal/models"
+	"auth/internal/storagenode"
 	"auth/internal/utils"
 	"context"
 	"fmt"
@@ -15,13 +16,14 @@ import (
 var (
 	refreshSecretKey     = []byte("Secret!!")
 	accessSecret         = []byte("Access!!")
-	accessTokenDuration  = time.Minute
+	accessTokenDuration  = 5 * time.Minute
 	refreshTokenDuration = time.Hour * 24
 )
 
 type Server struct {
-	port string
-	repo UserRepo
+	port         string
+	repo         UserRepo
+	outerstorage storagenode.OuterStorage
 }
 
 type UserRepo interface {
@@ -29,8 +31,8 @@ type UserRepo interface {
 	Authenticate(username, password string) bool
 }
 
-func New(port string, repo UserRepo) *Server {
-	return &Server{port: port, repo: repo}
+func New(port string, repo UserRepo, outerstorage storagenode.OuterStorage) *Server {
+	return &Server{port: port, repo: repo, outerstorage: outerstorage}
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -43,7 +45,8 @@ func (s *Server) Run(ctx context.Context) error {
 	//в json access
 
 	e.GET("/api/v1/getUserKeys", authservice.CheckJwt(s.getUserKeys, accessSecret)) //получить все ключ значения проверка валидности jwt
-	//TODO в check jwt выбрасывать не internal server error а unauthorized и прекидывать на login
+
+	e.POST("/api/v1/addKey", authservice.CheckJwt(s.addKey, accessSecret)) // добавить значение формат json {key, value}
 
 	e.GET("/api/v1/auth/refreshTokens", s.refreshTokens) // refresh access and access token
 
@@ -51,7 +54,30 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) login(c *echo.Context) error {
-	return c.String(http.StatusOK, "Hello, World!")
+	req := models.UserAuthRequest{}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	ok := s.repo.Authenticate(req.Email, req.Password)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
+	}
+
+	access, refresh, err := generateTokens(&req)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	cookie := new(http.Cookie)
+	cookie.Name = "refresh_token"
+	cookie.Value = refresh
+	cookie.Expires = time.Now().Add(refreshTokenDuration)
+	cookie.HttpOnly = true
+	cookie.Secure = true
+
+	c.SetCookie(cookie)
+	return c.JSON(http.StatusOK, access)
 }
 
 func (s *Server) signup(c *echo.Context) error {
@@ -60,15 +86,8 @@ func (s *Server) signup(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	//TODO выделить в отдельный метод
 	s.repo.AddUser(req.Email, req.Password)
-	access, err := utils.GenerateToken(models.UserInfo{Username: req.Email}, accessSecret, accessTokenDuration)
-
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-	}
-
-	refresh, err := utils.GenerateToken(models.UserInfo{Username: req.Email}, refreshSecretKey, refreshTokenDuration)
+	access, refresh, err := generateTokens(&req)
 
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -86,9 +105,68 @@ func (s *Server) signup(c *echo.Context) error {
 }
 
 func (s *Server) getUserKeys(c *echo.Context) error {
-	return c.String(http.StatusOK, "Hello, World!")
+	claims, _ := c.Get("userClaims").(*models.UserClaims)
+	data, err := s.outerstorage.GetUserData(claims.Email)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "No such user")
+	}
+
+	return c.JSON(http.StatusOK, models.UserKeyValue{UserKeyValue: data})
+}
+
+func (s *Server) addKey(c *echo.Context) error {
+	claims, _ := c.Get("userClaims").(*models.UserClaims)
+
+	var data models.KeyValue
+	if c.Bind(&data) != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Bad request")
+	}
+
+	_ = s.outerstorage.AddValue(claims.Email, data.Key, data.Value)
+	return echo.NewHTTPError(http.StatusOK, "OK")
 }
 
 func (s *Server) refreshTokens(c *echo.Context) error {
-	return c.String(http.StatusOK, "Hello, World!")
+	token, err := c.Cookie("refresh_token")
+
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
+	}
+	//TODO deactivate other sessions with this token
+
+	claims, err := utils.VerifyToken(token.Value, refreshSecretKey)
+
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
+	}
+
+	access, refresh, err := generateTokens(&models.UserAuthRequest{Email: claims.Email})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	cookie := new(http.Cookie)
+	cookie.Name = "refresh_token"
+	cookie.Value = refresh
+	cookie.Expires = time.Now().Add(refreshTokenDuration)
+	cookie.HttpOnly = true
+	cookie.Secure = true
+
+	c.SetCookie(cookie)
+	return c.JSON(http.StatusOK, access)
+}
+
+func generateTokens(user *models.UserAuthRequest) (string, string, error) {
+	access, err := utils.GenerateToken(models.UserInfo{Email: user.Email}, accessSecret, accessTokenDuration)
+
+	if err != nil {
+		return "", "", echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	refresh, err := utils.GenerateToken(models.UserInfo{Email: user.Email}, refreshSecretKey, refreshTokenDuration)
+
+	if err != nil {
+		return "", "", echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return access, refresh, nil
 }
