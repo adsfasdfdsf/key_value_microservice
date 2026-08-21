@@ -1,5 +1,10 @@
 package userrepo
 
+import (
+	"auth/internal/utils"
+	"fmt"
+)
+
 type UserRepo map[string]string
 
 func New() *UserRepo {
@@ -7,9 +12,13 @@ func New() *UserRepo {
 }
 
 func (r *UserRepo) AddUser(username, password string) {
-	(*r)[username] = password
+	passwordHash, err := utils.HashPassword(password)
+	if err != nil {
+		fmt.Printf("hashing password failed: %v", err)
+	}
+	(*r)[username] = passwordHash
 }
 
 func (r *UserRepo) Authenticate(username, password string) bool {
-	return (*r)[username] == password
+	return utils.VerifyPassword((*r)[username], password)
 }
