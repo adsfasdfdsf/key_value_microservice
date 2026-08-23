@@ -79,10 +79,10 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) login(c *echo.Context) error {
-	log := logger.GetLogger(s.ctx)
+	//log := logger.GetLogger(s.ctx)
 	req := models.UserAuthRequest{}
 	if err := c.Bind(&req); err != nil {
-		
+
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
