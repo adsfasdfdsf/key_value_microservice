@@ -15,14 +15,10 @@ export default function Login() {
 
         const form = e.target;
         const formData = new FormData(form);
-        if (formData.get("password") !== formData.get("repeatPassword")) {
-            alert("Passwords do not match");
-            return;
-        }
 
         const api = UserApi;
 
-        await api.SignUp(formData.get("email"), formData.get("password"))
+        await api.LogIn(formData.get("email"), formData.get("password"))
         
         navigate("/main")
         // API request класс на ооп в отдельном файле с запросами с инкапсуляцией сам url в .env
