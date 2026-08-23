@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import UserApi from "../../api/UserApi"
 
-export default function SignIn() {
+
+export default function SignUp() {
     const [values, setValues] = useState({});
     const navigate = useNavigate();
     const [showPassword, setShowPassword] = useState(false);
@@ -10,7 +12,7 @@ export default function SignIn() {
         setValues({...values, [e.target.name]: e.target.value});
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         const form = e.target;
@@ -19,15 +21,21 @@ export default function SignIn() {
             alert("Passwords do not match");
             return;
         }
+
+        const api = UserApi;
+
+        await api.SignUp(formData.get("email"), formData.get("password"))
+        
+        navigate("/main")
         // API request класс на ооп в отдельном файле с запросами с инкапсуляцией сам url в .env
         // fetch! или axios и в логин тож самое
         // TODO passwords do not match
-        navigate("/");
+
     }
 
     return <>
-                <h2 className="text-[#518592] font-bold text-2xl">Sign in</h2>
-                <p className="text-[#518592] text-sm mt-4">If you are not a member, sign in</p>
+                <h2 className="text-[#518592] font-bold text-2xl">Sign up</h2>
+                <p className="text-[#518592] text-sm mt-4">If you are not a member, sign up</p>
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4" >
                     <input onChange={handleChange} className="p-2 mt-8 rounded-xl border placeholder:opacity-50 " type="email" placeholder="email@mail.com" name="email" required />
 
@@ -77,7 +85,7 @@ export default function SignIn() {
                         </button>
                     </div>
 
-                    <button className="bg-[#518592] rounded-xl text-white py-2 hover:scale-105 duration-300">Log in</button>
+                    <button className="bg-[#518592] rounded-xl text-white py-2 hover:scale-105 duration-300">Sign up</button>
                 </form>
 
                 <div className="mt-10 grid grid-cols-3 items-center text-gray-500 ">

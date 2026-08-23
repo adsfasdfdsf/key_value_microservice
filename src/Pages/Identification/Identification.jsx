@@ -1,11 +1,11 @@
 import { useState } from "react";
-import Login from "../Login/Login";
-import SignIn from "../SignIn/SignUp";
+import Login from "../../Components/Login/Login";
+import SignUp from "../../Components/SignUp/SignUp";
 
-export default function Home() {
-  const [showRegister, setShowRegister] = useState(false);
+export default function Home({showRegistrageionWindow}) {
+  const [showRegister, setShowRegister] = useState(showRegistrageionWindow);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [moveImage, setMoveImage] = useState(false);
+  const [moveImage, setMoveImage] = useState(showRegistrageionWindow);
 
 
 
@@ -21,15 +21,15 @@ export default function Home() {
 
   return (
     <section className="bg-gray-50 min-h-screen flex items-center justify-center">
-      <div className="bg-gray-100 flex flex-col sm:flex-row rounded-2xl shadow-lg max-w-3xl p-5 items-center overflow-hidden
-      ">
+      <div className="bg-gray-100 flex flex-col sm:flex-row rounded-2xl 
+      shadow-lg max-w-3xl p-5 items-center overflow-hidden">
 
         <div
           className={`sm:w-1/2 px-12 ${
             isAnimating ? "animate-fade-out" : "animate-fade-in"
           } ${showRegister ? `sm:translate-x-full` : `sm:translate-x-0`}`}
         >
-          {showRegister ? <SignIn /> : <Login />}
+          {showRegister ? <SignUp /> : <Login />}
         </div>
 
         <div className={`hidden sm:block w-1/2 transition-all duration-700 ${moveImage ? "-translate-x-full" : "translate-x-0"}`}>

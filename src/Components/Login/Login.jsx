@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom";
-
+import UserApi from "../../api/UserApi"
 
 export default function Login() {
     const [values, setValues] = useState({});
@@ -10,9 +10,25 @@ export default function Login() {
         setValues({...values, [e.target.name]: e.target.value});
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        navigate("/");
+
+        const form = e.target;
+        const formData = new FormData(form);
+        if (formData.get("password") !== formData.get("repeatPassword")) {
+            alert("Passwords do not match");
+            return;
+        }
+
+        const api = UserApi;
+
+        await api.SignUp(formData.get("email"), formData.get("password"))
+        
+        navigate("/main")
+        // API request класс на ооп в отдельном файле с запросами с инкапсуляцией сам url в .env
+        // fetch! или axios и в логин тож самое
+        // TODO passwords do not match
+
     }
 
 
@@ -61,27 +77,3 @@ export default function Login() {
             </>
 }
 
-
-// {/* <div className="sm:block hidden w-1/2">
-//                 <img className="rounded-2xl" src="src/assets/image.png" alt="" />
-//             </div> */}
-
-    // return <div className={style.overlay}>
-    // <div className={style.login_form_container}>
-    //         <h2>Вход в аккаунт</h2>
-    //         <form onSubmit={handleSubmit} onReset={handleReset}>
-    //             <label htmlFor="login">Login:</label> 
-    //             <input onChange={handleChange} name="login" type="text" required />
-                
-    //             <label htmlFor="login">Password:</label> 
-    //             <input onChange={handleChange} name="password" type="password" required />
-    //             <div className={style.options_row}>
-    //             <label><input type="checkbox"/> Remember Me</label>
-    //             <a href="#">Forgot Password?</a>
-    //             </div>
-    //             <button type="submit" className={style.button}>Login</button>
-    //             <button type="reset" className={style.button}>Create An Account</button>
-
-    //         </form>
-    //     </div>
-    //     </div>

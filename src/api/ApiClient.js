@@ -1,15 +1,15 @@
 let accessToken = null;
 
 export function getAccessToken(){
-    accessToken = localStorage.getItem("accessToken");
+    return accessToken
 }
 
 export function setAccessToken(token) {
-    localStorage.setItem("accessToken", token);
+    accessToken = token
 }
 
 
-class ApiClient {
+export class ApiClient {
     #baseurl
 
     constructor(baseurl) {
@@ -19,22 +19,25 @@ class ApiClient {
     async request(endpoint, options = {}, retry = true) {
         const headers = {
             "Content-Type": "application/json",
-            ...options.headers
+            ...options.headers,
+            
         }
         if (accessToken){
             headers.Authorization = `Bearer ${getAccessToken()}`;
         }
+        
         const response = await fetch(this.#baseurl + endpoint,
             {
+                credentials: "include", //TODO убрать в проде без Cors
+
                 ...options,
                 headers,
-                credentials: "include",
             }
         )
 
         if ((response.status == 401) && retry){
-            refreshed = await this.refresh();
-
+            const refreshed = await this.refresh();
+            console.log("here")
             if (refreshed){
                 return this.request(endpoint, options, false);
             }
@@ -45,13 +48,13 @@ class ApiClient {
         if (!response.ok) {
             throw new Error(`API error: ${response.status}`);
         }
-
-        return response.json();
+        console.log(`foolfiled ${endpoint}`)
+        return response;
     }
 
     async refresh() {
-        const response = await fetch(this.#baseurl + "/auth/refresh", {
-            method: "POST",
+        const response = await fetch(this.#baseurl + "/api/v1/auth/refreshTokens", {
+            method: "GET",
             credentials: "include"
         });
 
@@ -76,5 +79,3 @@ class ApiClient {
             body: JSON.stringify(body)}, true);
     }
 }
-
-export default new ApiClient("link"); //todo link
