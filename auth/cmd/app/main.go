@@ -16,7 +16,7 @@ func main() {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, logger.LoggerKey, logger.New(serviceName))
 	mainLogger := logger.GetLogger(ctx)
-	s := userserver.New("1128", userrepo.New(), storagenode.NewSimpleStorage())
+	s := userserver.New(ctx, "1128", userrepo.New(), storagenode.NewSimpleStorage())
 	mainLogger.Info(ctx, "serverStarted")
 	if s.Run(ctx) != nil {
 	}
