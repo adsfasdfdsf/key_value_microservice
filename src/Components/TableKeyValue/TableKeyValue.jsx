@@ -7,14 +7,13 @@ function isSubsequence(sub, str) {
     if (char === sub[subIdx]) {
       subIdx++;
     }
-    // If we matched all characters of the subsequence, stop early
     if (subIdx === sub.length) return true;
   }
   
   return subIdx === sub.length;
 }
 
-export default function Table({showAll, search, values}) {
+export default function TableKeyValue({showAll, search, values, showFiles}) {
 
     return <>
         
@@ -27,9 +26,14 @@ export default function Table({showAll, search, values}) {
             rounded-xl text-xl">Value</div>
             </div>
             <hr></hr>
-            {values.map((el) => {
+
+            {
+            values.map((el) => {
                 return isSubsequence(search, el.key) && <DataRow showAll={showAll} key={el.key} valueKey={el.key} value={el.value} />
-            }) }
+            }) 
+            }
+
+
         </div>
     </>
 }
