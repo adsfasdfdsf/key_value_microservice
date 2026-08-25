@@ -13,11 +13,12 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	"go.uber.org/zap"
 )
 
 var (
-	refreshSecretKey     = []byte("Secret!!")
-	accessSecret         = []byte("Access!!")
+	refreshSecretKey     = []byte("Secret!!") //TODO брать из env или volt
+	accessSecret         = []byte("Access!!") //TODO брать из env или volt
 	accessTokenDuration  = 5 * time.Minute
 	refreshTokenDuration = time.Hour * 24
 )
@@ -79,7 +80,7 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) login(c *echo.Context) error {
-	//log := logger.GetLogger(s.ctx)
+	log := logger.GetLogger(s.ctx)
 	req := models.UserAuthRequest{}
 	if err := c.Bind(&req); err != nil {
 
@@ -95,12 +96,13 @@ func (s *Server) login(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-
+	log.Info(s.ctx, "User login", zap.String("user email", req.Email))
 	setRefreshCookie(c, refresh)
 	return c.JSON(http.StatusOK, models.UserAuthResponse{AccessToken: access})
 }
 
 func (s *Server) signup(c *echo.Context) error {
+	log := logger.GetLogger(s.ctx)
 	req := models.UserAuthRequest{}
 	err := c.Bind(&req)
 	if err != nil {
@@ -112,22 +114,26 @@ func (s *Server) signup(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-
+	log.Info(s.ctx, "User sign up", zap.String("user email", req.Email))
 	setRefreshCookie(c, refresh)
 	return c.JSON(http.StatusOK, models.UserAuthResponse{AccessToken: access})
 }
 
 func (s *Server) getUserKeys(c *echo.Context) error {
+	log := logger.GetLogger(s.ctx)
 	claims, _ := c.Get("userClaims").(*models.UserClaims)
 	data, _ := s.outerstorage.GetUserData(claims.Email)
 	//TODO error handler
 	if data == nil {
 		data = []models.KeyValue{}
 	}
+	log.Info(s.ctx, "User sign up", zap.String("user email", claims.Email))
 	return c.JSON(http.StatusOK, models.UserKeyValue{UserKeyValue: data})
 }
 
 func (s *Server) addKey(c *echo.Context) error {
+	log := logger.GetLogger(s.ctx)
+
 	claims, _ := c.Get("userClaims").(*models.UserClaims)
 
 	var data models.KeyValue
@@ -135,11 +141,14 @@ func (s *Server) addKey(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Bad request")
 	}
 
+	log.Info(s.ctx, "User added value", zap.String("user email", claims.Email))
 	_ = s.outerstorage.AddValue(claims.Email, data.Key, data.Value)
 	return echo.NewHTTPError(http.StatusOK, "OK")
 }
 
 func (s *Server) refreshTokens(c *echo.Context) error {
+	log := logger.GetLogger(s.ctx)
+
 	token, err := c.Cookie("refresh_token")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
@@ -155,6 +164,9 @@ func (s *Server) refreshTokens(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+
+	log.Info(s.ctx, "User refreshed tokens", zap.String("user email", claims.Email))
+
 	setRefreshCookie(c, refresh)
 	return c.JSON(http.StatusOK, models.UserAuthResponse{AccessToken: access})
 }
