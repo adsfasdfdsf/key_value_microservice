@@ -1,25 +1,17 @@
 package config
 
 import (
-	"auth/pkg/logger"
-	"context"
-
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
 type Config struct {
-
-	//TODO db config
-	//TODO grpc config or kafka config
-	smth string
+	AuthPostgreConfig
 }
 
-func New(ctx context.Context) *Config {
-	cfg := &Config{}
-	log := logger.GetLogger(ctx)
-	err := cleanenv.ReadEnv(cfg)
-	if err != nil {
-		log.Error(ctx, err.Error())
+func ReadFromFile() (*Config, error) {
+	var cfg Config
+	if err := cleanenv.ReadEnv(&cfg); err != nil {
+		return nil, err
 	}
-	return cfg
+	return &cfg, nil
 }

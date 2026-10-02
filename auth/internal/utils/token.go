@@ -2,6 +2,8 @@ package utils
 
 import (
 	"auth/internal/models"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -11,9 +13,14 @@ import (
 // Create New Token
 func GenerateToken(info models.UserInfo,
 	secretKey []byte, duration time.Duration) (string, error) {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return "", err
+	}
 	claims := models.UserClaims{
 		Email: info.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        hex.EncodeToString(id),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
 		},
 	}
