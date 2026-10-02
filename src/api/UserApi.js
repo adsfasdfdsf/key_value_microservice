@@ -1,11 +1,11 @@
-import {setAccessToken, ApiClient} from "./ApiClient.js"
+import {setAccessToken, sessionApi} from "./ApiClient.js"
 
 
 class UserApi {
     #api
 
     constructor(){
-        this.#api = new ApiClient("http://localhost:1128")
+        this.#api = sessionApi
     }
 
     async LogIn(email, password){

@@ -4,10 +4,14 @@ import TableKeyValue from "../../Components/TableKeyValue/TableKeyValue"
 import ActionBar from "../../Components/ActionBar/ActionBar"
 import ModalAddValue from "../../Components/ModalAddValue/ModalAddValue";
 import UserApi from "../../api/UserApi";
+// import { useSelector, useDispatch } from "react-redux";
+// import { setUser } from "../../Redux/Slices/User/User";
 
 
 export default function Main() {
-    const api = UserApi;
+    // const api = UserApi;
+    // const dispatch = useDispatch();
+    // const user = useSelector((state) => state.user.user);
 
     const [showFiles, setShowFiles] = useState(false);
     const [search, setSearch] = useState("");
@@ -15,7 +19,7 @@ export default function Main() {
     const [values, setValues] = useState([]);
     const [showAll, setShowAll] = useState(false);
     
-
+    // console.log(user);
 
     const showModal = () => {
         setIsOpen(true);
@@ -46,11 +50,12 @@ export default function Main() {
 
 
     // useEffect(() => {
-    //     loadValues();
+        // loadValues();
     // }, []);
 
     useEffect(() => {
         showFiles ? loadFiles() : loadValues();
+        // dispatch(setUser({name: "test_user", id: 1}));
         //api request 
     }, [showFiles])
 
