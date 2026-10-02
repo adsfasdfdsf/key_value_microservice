@@ -6,8 +6,11 @@ import (
 	"auth/internal/storagenode"
 	"auth/internal/utils"
 	"auth/pkg/logger"
+	"auth/pkg/storage/tokenrepo"
 	"context"
+	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"net/http"
 	"time"
 
@@ -28,39 +31,45 @@ type Server struct {
 	port         string
 	repo         UserRepo
 	outerstorage storagenode.OuterStorage
+	shutdown     context.CancelFunc
+	tokens       TokenRepo
 }
 
 type UserRepo interface {
-	AddUser(username, password string)
+	AddUser(email, password string) (*models.User, string, error)
 	Authenticate(username, password string) bool
 }
 
-func New(ctx context.Context, port string, repo UserRepo, outerstorage storagenode.OuterStorage) *Server {
-	return &Server{ctx: ctx, port: port, repo: repo, outerstorage: outerstorage}
+type TokenRepo interface {
+	Save(context.Context, string, string, string, time.Time, time.Time) error
+	Rotate(context.Context, string, string, string, string, time.Time, time.Time) error
 }
 
-func (s *Server) Run(ctx context.Context) error {
+func New(ctx context.Context, port string, repo UserRepo, outerstorage storagenode.OuterStorage, tokens TokenRepo) *Server {
+	return &Server{ctx: ctx, port: port, repo: repo, outerstorage: outerstorage, tokens: tokens}
+}
+
+func (s *Server) Run() error {
 	e := echo.New()
-	
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-        AllowOrigins: []string{"http://localhost:5173"},
-        AllowMethods: []string{
-            http.MethodGet,
-            http.MethodHead,
-            http.MethodPut,
-            http.MethodPatch,
-            http.MethodPost,
-            http.MethodDelete,
-            http.MethodOptions,
-        },
-        AllowHeaders: []string{
-            echo.HeaderOrigin,
-            echo.HeaderContentType,
-            echo.HeaderAccept,
-            echo.HeaderAuthorization,
-        },
+		AllowOrigins: []string{"http://localhost:5173"},
+		AllowMethods: []string{
+			http.MethodGet,
+			http.MethodHead,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodPost,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowHeaders: []string{
+			echo.HeaderOrigin,
+			echo.HeaderContentType,
+			echo.HeaderAccept,
+			echo.HeaderAuthorization,
+		},
 		AllowCredentials: true, //TODO убрать в проде
-    }))
+	}))
 
 	e.Use(LogInterceptor(s.ctx))
 
@@ -74,10 +83,17 @@ func (s *Server) Run(ctx context.Context) error {
 
 	e.POST("/api/v1/addKey", authservice.CheckJwt(s.addKey, accessSecret)) // добавить значение формат json {key, value}
 
-	e.GET("/api/v1/auth/refreshTokens", s.refreshTokens) // refresh access and access token
+	e.GET("/api/v1/auth/refreshTokens", s.refreshTokens) // refresh refresh and access token
+	logger.GetLogger(s.ctx).Info(s.ctx, "starting server")
+	ctx, stop := context.WithCancel(context.Background())
+	s.shutdown = stop
+	sc := echo.StartConfig{
+		Address:         fmt.Sprintf(":%s", s.port),
+		GracefulTimeout: 5 * time.Second,
+	}
 
-	return e.Start(fmt.Sprintf(":%s", s.port))
-}
+	return sc.Start(ctx, e)
+} //fmt.Sprintf(":%s", s.port)
 
 func (s *Server) login(c *echo.Context) error {
 	log := logger.GetLogger(s.ctx)
@@ -96,6 +112,9 @@ func (s *Server) login(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	if err := s.saveTokens(c.Request().Context(), req.Email, access, refresh); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not store tokens")
+	}
 	log.Info(s.ctx, "User login", zap.String("user email", req.Email))
 	setRefreshCookie(c, refresh)
 	return c.JSON(http.StatusOK, models.UserAuthResponse{AccessToken: access})
@@ -108,11 +127,20 @@ func (s *Server) signup(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	s.repo.AddUser(req.Email, req.Password)
+	if _, _, err := s.repo.AddUser(req.Email, req.Password); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return echo.NewHTTPError(http.StatusConflict, "user already exists")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not create user")
+	}
 	access, refresh, err := generateTokens(&req)
 
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if err := s.saveTokens(c.Request().Context(), req.Email, access, refresh); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not store tokens")
 	}
 	log.Info(s.ctx, "User sign up", zap.String("user email", req.Email))
 	setRefreshCookie(c, refresh)
@@ -127,7 +155,7 @@ func (s *Server) getUserKeys(c *echo.Context) error {
 	if data == nil {
 		data = []models.KeyValue{}
 	}
-	log.Info(s.ctx, "User sign up", zap.String("user email", claims.Email))
+	log.Info(s.ctx, "got keys", zap.String("user email", claims.Email))
 	return c.JSON(http.StatusOK, models.UserKeyValue{UserKeyValue: data})
 }
 
@@ -153,7 +181,6 @@ func (s *Server) refreshTokens(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 	}
-	//TODO deactivate other sessions with this token
 
 	claims, err := utils.VerifyToken(token.Value, refreshSecretKey)
 	if err != nil {
@@ -165,6 +192,21 @@ func (s *Server) refreshTokens(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	accessClaims, err := utils.VerifyToken(access, accessSecret)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not verify generated token")
+	}
+	refreshClaims, err := utils.VerifyToken(refresh, refreshSecretKey)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not verify generated token")
+	}
+	if err := s.tokens.Rotate(c.Request().Context(), claims.Email, token.Value, access, refresh,
+		accessClaims.ExpiresAt.Time, refreshClaims.ExpiresAt.Time); err != nil {
+		if errors.Is(err, tokenrepo.ErrInvalidRefresh) {
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not store tokens")
+	}
 	log.Info(s.ctx, "User refreshed tokens", zap.String("user email", claims.Email))
 
 	setRefreshCookie(c, refresh)
@@ -187,16 +229,31 @@ func generateTokens(user *models.UserAuthRequest) (string, string, error) {
 	return access, refresh, nil
 }
 
-
 func setRefreshCookie(c *echo.Context, refresh string) {
-    cookie := new(http.Cookie)
+	cookie := new(http.Cookie)
 	cookie.Name = "refresh_token"
 	cookie.Value = refresh
 	cookie.Expires = time.Now().Add(refreshTokenDuration)
 	cookie.HttpOnly = true
 	cookie.Secure = false //TODO убрать в проде
 	cookie.Path = "/"
-    cookie.SameSite = http.SameSiteLaxMode //TODO убрать в проде
+	cookie.SameSite = http.SameSiteLaxMode //TODO убрать в проде
 
-    c.SetCookie(cookie)
+	c.SetCookie(cookie)
+}
+
+func (s *Server) Stop() error {
+	s.shutdown()
+	return nil
+}
+func (s *Server) saveTokens(ctx context.Context, email, access, refresh string) error {
+	a, err := utils.VerifyToken(access, accessSecret)
+	if err != nil {
+		return err
+	}
+	r, err := utils.VerifyToken(refresh, refreshSecretKey)
+	if err != nil {
+		return err
+	}
+	return s.tokens.Save(ctx, email, access, refresh, a.ExpiresAt.Time, r.ExpiresAt.Time)
 }
