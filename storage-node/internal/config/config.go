@@ -9,17 +9,18 @@ import (
 type ROLE string
 
 const (
-	MASTER ROLE = "master"
+	MASTER  ROLE = "master"
 	REPLICA ROLE = "replica"
 )
 
-type Config struct{
-	RestPort 	int 	`env:"REST_PORT" envDefault:"7070"`
-	GrpcPort 	int 	`env:"GRPC_PORT" envDefault:"4040"`
-	ROLE 		ROLE 	`env:"ROLE" envDefault:"replica"`	
+type Config struct {
+	PostgresDSN string `env:"POSTGRES_DSN" env-default:"postgres://root:123@localhost:5432/db?sslmode=disable"`
+	RestPort    int    `env:"REST_PORT" env-default:"7070"`
+	GrpcPort    int    `env:"GRPC_PORT" env-default:"4040"`
+	ROLE        ROLE   `env:"ROLE" env-default:"replica"`
 }
 
-func New(ctx context.Context) *Config{
+func New(ctx context.Context) *Config {
 	cfg := &Config{}
 	log := logger.GetLogger(ctx)
 	err := cleanenv.ReadEnv(cfg)
@@ -28,4 +29,3 @@ func New(ctx context.Context) *Config{
 	}
 	return cfg
 }
-

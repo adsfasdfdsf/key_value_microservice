@@ -14,11 +14,11 @@ import (
 )
 
 func TestAddValueHandler(t *testing.T) {
-	body := []byte(`{"key":"name","value":"john"}`)
+	body := []byte(`{"user":"alice","key":"name","value":"john"}`)
 
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, logger.LoggerKey, logger.New("test"))
-	
+
 	storage := map_storage.New()
 
 	s, err := New(ctx, 1010, storage)
@@ -43,7 +43,7 @@ func TestGetValueHandler(t *testing.T) {
 	ctx = context.WithValue(ctx, logger.LoggerKey, logger.New("test"))
 
 	storage := map_storage.New()
-	storage.Add("name", "john")
+	storage.Add(ctx, "alice", "name", "john")
 
 	s, err := New(ctx, 1010, storage)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestGetValueHandler(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/value/name", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/value/name?user=alice", nil)
 	rr := httptest.NewRecorder()
 
 	mux.ServeHTTP(rr, req)
@@ -67,7 +67,58 @@ func TestGetValueHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resp.Key != "name" || resp.Value != "john" {
+	if resp.User != "alice" || resp.Key != "name" || resp.Value != "john" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestUserKeyIsolationAndValidation(t *testing.T) {
+	ctx := context.WithValue(context.Background(), logger.LoggerKey, logger.New("test"))
+	storage := map_storage.New()
+	s, _ := New(ctx, 1010, storage)
+	for _, body := range []string{
+		`{"user":"alice","key":"name","value":"Alice"}`,
+		`{"user":"bob","key":"name","value":"Bob"}`,
+		`{"user":"alice","key":"name","value":"Updated"}`,
+	} {
+		rr := httptest.NewRecorder()
+		s.addValue(rr, httptest.NewRequest(http.MethodPost, "/api/v1/addValue", bytes.NewBufferString(body)))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("add: %d", rr.Code)
+		}
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
+	for _, tc := range []struct {
+		path  string
+		code  int
+		value string
+	}{
+		{"/api/v1/value/name?user=alice", 200, "Updated"},
+		{"/api/v1/value/name?user=bob", 200, "Bob"},
+		{"/api/v1/value/name?user=charlie", 404, ""},
+		{"/api/v1/value/name", 400, ""},
+	} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if rr.Code != tc.code {
+			t.Fatalf("%s: status %d", tc.path, rr.Code)
+		}
+		if tc.code == 200 {
+			var body models.RestMessage
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Value != tc.value {
+				t.Fatalf("%s: value %q", tc.path, body.Value)
+			}
+		}
+	}
+	for _, body := range []string{`{"key":"name","value":"x"}`, `{"user":"alice","value":"x"}`} {
+		rr := httptest.NewRecorder()
+		s.addValue(rr, httptest.NewRequest(http.MethodPost, "/api/v1/addValue", bytes.NewBufferString(body)))
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("missing user/key: %d", rr.Code)
+		}
 	}
 }

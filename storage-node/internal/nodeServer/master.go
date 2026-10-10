@@ -1,11 +1,11 @@
 package nodeServer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"bytes"
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/models"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/transport/grpc"
@@ -13,31 +13,30 @@ import (
 	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
 )
 
-
 type Master struct {
-	ctx context.Context
-	rest *rest.Server
+	ctx     context.Context
+	rest    *rest.Server
 	clients *grpc.Multiclient
 }
 
-func NewMaster(ctx context.Context, rest *rest.Server, clients *grpc.Multiclient) *Master{
+func NewMaster(ctx context.Context, rest *rest.Server, clients *grpc.Multiclient) *Master {
 	return &Master{
-		ctx: ctx,
-		rest: rest,
+		ctx:     ctx,
+		rest:    rest,
 		clients: clients,
 	}
 }
 
-func (m *Master) Start() error{
+func (m *Master) Start() error {
 	return m.rest.Start(m.ctx, m.sendToReplicas)
 }
 
-func (m *Master) Stop() error{
+func (m *Master) Stop() error {
 	return m.rest.Stop()
 }
 
-func (m *Master) sendToReplicas(handler func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request){
-	return func(w http.ResponseWriter, r *http.Request){
+func (m *Master) sendToReplicas(handler func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
 		request, err := io.ReadAll(r.Body)
@@ -58,7 +57,12 @@ func (m *Master) sendToReplicas(handler func(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		err = m.clients.AppendValue(m.ctx, restRequest.Key, restRequest.Value)
+		if restRequest.User == "" || restRequest.Key == "" {
+			http.Error(w, "user and key are required", http.StatusBadRequest)
+			return
+		}
+		replicationCtx := context.WithValue(r.Context(), logger.LoggerKey, log)
+		err = m.clients.AppendValue(replicationCtx, restRequest.User, restRequest.Key, restRequest.Value)
 		if err != nil {
 			log.Warn(m.ctx, "Failed to send request to replicas")
 		}

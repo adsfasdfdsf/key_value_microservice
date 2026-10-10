@@ -9,7 +9,7 @@ import (
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/config"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/nodeServer"
-	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/storage/map_storage"
+	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/storage/postgres"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/transport/grpc"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/transport/rest"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
@@ -28,7 +28,12 @@ func main() {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, logger.LoggerKey, logger.New(serviceName))
 	cfg := config.New(ctx)
-	repo := map_storage.New()
+	repo, err := postgres.New(ctx, cfg.PostgresDSN)
+	if err != nil {
+		logger.GetLogger(ctx).Error(ctx, err.Error())
+		return
+	}
+	defer repo.Close()
 	mainLogger := logger.GetLogger(ctx)
 	restServer, err := rest.New(ctx, cfg.RestPort, repo)
 	if err != nil || restServer == nil {
@@ -51,16 +56,15 @@ func main() {
 	graceCh := make(chan os.Signal, 1)
 	signal.Notify(graceCh, syscall.SIGINT, syscall.SIGTERM)
 
-
-	go func(){
+	go func() {
 		mainLogger.Info(ctx, fmt.Sprintf("Starting %v server", cfg.ROLE))
 		if err := node.Start(); err != nil {
 			mainLogger.Error(ctx, err.Error())
 		}
 	}()
 
-	<- graceCh
-	
+	<-graceCh
+
 	if err = node.Stop(); err != nil {
 		mainLogger.Error(ctx, "Graceful shutdown failed")
 	}

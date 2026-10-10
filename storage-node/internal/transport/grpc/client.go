@@ -10,11 +10,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type Client struct{
+type Client struct {
 	Address string
 }
 
-func (cl *Client)AppendValue(ctx context.Context, key, value string) (bool, error){
+func (cl *Client) AppendValue(ctx context.Context, user, key, value string) (bool, error) {
 	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	log := logger.GetLogger(ctx)
 	if err != nil {
@@ -25,15 +25,16 @@ func (cl *Client)AppendValue(ctx context.Context, key, value string) (bool, erro
 
 	c := desc.NewNodeServiceClient(conn)
 
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	timeout, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
 	req := desc.AppendValueRequest{
-		Key: key,
+		User:  user,
+		Key:   key,
 		Value: value,
 	}
 	resp, err := c.AppendValue(timeout, &req)
-	
+
 	if err != nil {
 		log.Error(ctx, "grpc Request Failed")
 		return false, err
