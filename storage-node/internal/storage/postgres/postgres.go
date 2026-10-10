@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 
@@ -10,8 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/interfaces"
 )
-
-var schema string
 
 type Storage struct{ db *pgxpool.Pool }
 
@@ -23,10 +20,6 @@ func New(ctx context.Context, dsn string) (*Storage, error) {
 	if err = db.Ping(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("connect postgres: %w", err)
-	}
-	if _, err = db.Exec(ctx, schema); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("initialize key-value table: %w", err)
 	}
 	return &Storage{db: db}, nil
 }
@@ -47,4 +40,25 @@ func (s *Storage) Get(ctx context.Context, user, key string) (string, error) {
 		return "", interfaces.ErrNotFound
 	}
 	return value, err
+}
+
+func (s *Storage) GetAll(ctx context.Context, user string) (map[string]string, error) {
+	rows, err := s.db.Query(ctx, `SELECT "key", "value" FROM key_values WHERE "user" = $1`, user)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	result := make(map[string]string)
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		result[key] = value
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

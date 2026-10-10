@@ -2,7 +2,7 @@ package main
 
 import (
 	"auth/internal/config"
-	"auth/internal/storagenode"
+	"auth/internal/storage/node_storage"
 	"auth/internal/transport/UserServer"
 	"auth/pkg/logger"
 	"auth/pkg/storage/tokenrepo"
@@ -40,7 +40,7 @@ func main() {
 		mainLogger.Error(ctx, "Error initializing token storage")
 		return
 	}
-	s := userserver.New(ctx, "1128", repo, storagenode.NewSimpleStorage(), tokens)
+	s := userserver.New(ctx, "1128", repo, nodestorage.New(cfg.StorageURL), tokens)
 	mainLogger.Info(ctx, "serverStarted")
 
 	go func() {

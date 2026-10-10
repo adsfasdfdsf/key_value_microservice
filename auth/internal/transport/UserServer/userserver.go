@@ -3,7 +3,7 @@ package userserver
 import (
 	"auth/internal/authservice"
 	"auth/internal/models"
-	"auth/internal/storagenode"
+	"auth/internal/storage/storagenode"
 	"auth/internal/utils"
 	"auth/pkg/logger"
 	"auth/pkg/storage/tokenrepo"
@@ -150,8 +150,11 @@ func (s *Server) signup(c *echo.Context) error {
 func (s *Server) getUserKeys(c *echo.Context) error {
 	log := logger.GetLogger(s.ctx)
 	claims, _ := c.Get("userClaims").(*models.UserClaims)
-	data, _ := s.outerstorage.GetUserData(claims.Email)
-	//TODO error handler
+	data, err := s.outerstorage.GetUserData(claims.Email)
+	if err != nil {
+		log.Error(s.ctx, "Could not get user values", zap.Error(err))
+		return echo.NewHTTPError(http.StatusBadGateway, "storage unavailable")
+	}
 	if data == nil {
 		data = []models.KeyValue{}
 	}
@@ -169,8 +172,11 @@ func (s *Server) addKey(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Bad request")
 	}
 
+	if err := s.outerstorage.AddValue(claims.Email, data.Key, data.Value); err != nil {
+		log.Error(s.ctx, "Could not add user value", zap.Error(err))
+		return echo.NewHTTPError(http.StatusBadGateway, "storage unavailable")
+	}
 	log.Info(s.ctx, "User added value", zap.String("user email", claims.Email))
-	_ = s.outerstorage.AddValue(claims.Email, data.Key, data.Value)
 	return echo.NewHTTPError(http.StatusOK, "OK")
 }
 
