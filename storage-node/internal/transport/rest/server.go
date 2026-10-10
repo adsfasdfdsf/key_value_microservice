@@ -35,6 +35,7 @@ func (s *Server) Start(ctx context.Context,
 	log := logger.GetLogger(ctx)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
+	mux.HandleFunc("GET /api/v1/values/{user}", s.getAllValues)
 	mux.HandleFunc("POST /api/v1/addValue", sendToReplicas(s.addValue))
 	s.serv = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
@@ -115,6 +116,41 @@ func (s *Server) addValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) getAllValues(w http.ResponseWriter, r *http.Request) {
+	user := r.PathValue("user")
+	if user == "" {
+		http.Error(w, "user is required", http.StatusBadRequest)
+		return
+	}
+	log := logger.GetLogger(s.ctx)
+	log.Info(s.ctx, fmt.Sprintf("new Get all values request %v", string(user)))
+	values, err := s.repo.GetAll(r.Context(), user)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, interfaces.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		log.Warn(s.ctx, "response repo error")
+		w.Write([]byte(http.StatusText(status)))
+		return
+	}
+	resp := models.RestAllValuesMessage{
+		User:   user,
+		Values: values,
+	}
+	encodedresp, err := json.Marshal(resp)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		log.Error(s.ctx, "response json error")
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(encodedresp)
 }
 
 func (s *Server) Stop() error {

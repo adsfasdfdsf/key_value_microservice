@@ -6,6 +6,7 @@ import (
 
 type Config struct {
 	AuthPostgreConfig
+	StorageURL string `env:"STORAGE_URL" env-default:"http://localhost"`
 }
 
 func ReadFromFile() (*Config, error) {

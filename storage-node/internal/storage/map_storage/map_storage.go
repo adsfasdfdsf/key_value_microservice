@@ -36,4 +36,19 @@ func (m *MapStorage) Get(ctx context.Context, user, key string) (string, error) 
 	return value, nil
 }
 
+func (m *MapStorage) GetAll(ctx context.Context, user string) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	m.mut.RLock()
+	defer m.mut.RUnlock()
+	result := make(map[string]string)
+	for k, v := range m.storage {
+		if k.user == user {
+			result[k.key] = v
+		}
+	}
+	return result, nil
+}
+
 func New() *MapStorage { return &MapStorage{storage: make(map[userKey]string)} }
