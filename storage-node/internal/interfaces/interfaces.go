@@ -1,6 +1,13 @@
 package interfaces
 
-type Repository interface{
-	Add(key, value string) error
-	Get(key string) (string, error)
+import (
+	"context"
+	"errors"
+)
+
+var ErrNotFound = errors.New("key not found")
+
+type Repository interface {
+	Add(ctx context.Context, user, key, value string) error
+	Get(ctx context.Context, user, key string) (string, error)
 }

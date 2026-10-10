@@ -11,6 +11,7 @@ service NodeService {
 message AppendValueRequest {
     string key = 1;
     string value = 2;
+    string user = 3;
 }
 
 message AppendValueResponse {

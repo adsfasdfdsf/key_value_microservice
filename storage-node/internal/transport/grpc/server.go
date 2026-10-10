@@ -3,6 +3,8 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"net"
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/interfaces"
@@ -12,14 +14,14 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-type Server struct{
-	repo interfaces.Repository
-	port int
+type Server struct {
+	repo  interfaces.Repository
+	port  int
 	gserv *grpc.Server
 	desc.UnimplementedNodeServiceServer
 }
 
-func NewServer(ctx context.Context, port int, repo interfaces.Repository) *Server{
+func NewServer(ctx context.Context, port int, repo interfaces.Repository) *Server {
 	return &Server{
 		repo: repo,
 		port: port,
@@ -46,13 +48,16 @@ func (s *Server) Start(ctx context.Context) error {
 	return s.gserv.Serve(lis)
 }
 
-func (s *Server) Stop()  {
+func (s *Server) Stop() {
 	s.gserv.GracefulStop()
 }
 
-func (s *Server) AppendValue(ctx context.Context, req *desc.AppendValueRequest) (*desc.AppendValueResponse, error){
-	err := s.repo.Add(req.Key, req.Value)
-	if (err != nil){
+func (s *Server) AppendValue(ctx context.Context, req *desc.AppendValueRequest) (*desc.AppendValueResponse, error) {
+	if req.User == "" || req.Key == "" {
+		return nil, status.Error(codes.InvalidArgument, "user and key are required")
+	}
+	err := s.repo.Add(ctx, req.User, req.Key, req.Value)
+	if err != nil {
 		return &desc.AppendValueResponse{
 			Success: false,
 		}, err

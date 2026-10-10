@@ -1,37 +1,39 @@
 package map_storage
 
 import (
+	"context"
+	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/interfaces"
 	"sync"
-	"errors"
 )
 
-
+type userKey struct{ user, key string }
 
 type MapStorage struct {
-	storage map[string]string
-	mut sync.RWMutex
+	storage map[userKey]string
+	mut     sync.RWMutex
 }
 
-func (m *MapStorage) Add(key, value string) error {
+func (m *MapStorage) Add(ctx context.Context, user, key, value string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mut.Lock()
 	defer m.mut.Unlock()
-	m.storage[key] = value;
+	m.storage[userKey{user, key}] = value
 	return nil
 }
 
-func (m *MapStorage) Get(key string) (string, error) {
+func (m *MapStorage) Get(ctx context.Context, user, key string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	m.mut.RLock()
 	defer m.mut.RUnlock()
-	val, ok := m.storage[key]
+	value, ok := m.storage[userKey{user, key}]
 	if !ok {
-		return "", errors.New("Value Not found")
+		return "", interfaces.ErrNotFound
 	}
-	return val, nil
+	return value, nil
 }
 
-func New() *MapStorage{
-	return &MapStorage{
-		storage: 	make(map[string]string),
-		mut: 		sync.RWMutex{},
-	}
-}
+func New() *MapStorage { return &MapStorage{storage: make(map[userKey]string)} }
