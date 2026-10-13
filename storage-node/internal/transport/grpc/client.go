@@ -7,7 +7,9 @@ import (
 	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
 	desc "gitlab.com/adsfasdfdsf-group/key-value-service/pkg/node_v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type Client struct {
@@ -40,4 +42,22 @@ func (cl *Client) AppendValue(ctx context.Context, user, key, value string) (boo
 		return false, err
 	}
 	return resp.Success, nil
+}
+
+func (cl *Client) SubmitValue(ctx context.Context, user, key, value string) error {
+	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	timeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	response, err := desc.NewNodeServiceClient(conn).SubmitValue(timeout, &desc.AppendValueRequest{User: user, Key: key, Value: value})
+	if err != nil {
+		return err
+	}
+	if !response.Success {
+		return status.Error(codes.Internal, "leader did not accept write")
+	}
+	return nil
 }

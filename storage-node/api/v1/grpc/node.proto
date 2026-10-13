@@ -5,6 +5,8 @@ package node_v1;
 option go_package = "gitlab.com/adsfasdfdsf-group/key-value-service/storage-node/pkg/grpc/node_v1;node_v1";
 
 service NodeService {
+    rpc Prepare(PrepareRequest) returns (PrepareResponse);
+    rpc SubmitValue(AppendValueRequest) returns (AppendValueResponse);
     rpc AppendValue(AppendValueRequest) returns (AppendValueResponse);
 }
 
@@ -16,4 +18,18 @@ message AppendValueRequest {
 
 message AppendValueResponse {
     bool success = 1;
+}
+
+message Ballot {
+    uint64 round = 1;
+    string node_id = 2;
+}
+
+message PrepareRequest {
+    Ballot ballot = 1;
+}
+
+message PrepareResponse {
+    bool promised = 1;
+    Ballot promised_ballot = 2;
 }

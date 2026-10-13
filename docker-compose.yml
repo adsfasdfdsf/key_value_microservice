@@ -2,7 +2,9 @@ services:
   master:
     build: ./storage-node
     environment:
+      NODE_ID: node-1
       ROLE: master
+      PEER_GRPC_ADDRESSES: replica1:4040,replica2:4040
       REST_PORT: "7070"
       GRPC_PORT: "4040"
       POSTGRES_DSN: postgres://root:123@master_db:5432/db?sslmode=disable
@@ -17,7 +19,10 @@ services:
   replica1:
     build: ./storage-node
     environment:
+      NODE_ID: node-2
       ROLE: replica
+      PEER_GRPC_ADDRESSES: master:4040,replica2:4040
+      LEADER_GRPC_ADDRESS: master:4040
       REST_PORT: "7070"
       GRPC_PORT: "4040"
       POSTGRES_DSN: postgres://root:123@replica1_db:5432/db?sslmode=disable
@@ -28,7 +33,10 @@ services:
   replica2:
     build: ./storage-node
     environment:
+      NODE_ID: node-3
       ROLE: replica
+      PEER_GRPC_ADDRESSES: master:4040,replica1:4040
+      LEADER_GRPC_ADDRESS: master:4040
       REST_PORT: "7070"
       GRPC_PORT: "4040"
       POSTGRES_DSN: postgres://root:123@replica2_db:5432/db?sslmode=disable

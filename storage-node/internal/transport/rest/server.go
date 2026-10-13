@@ -8,6 +8,7 @@ import (
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/interfaces"
 	"io"
 	"net/http"
+	"time"
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/models"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
@@ -24,7 +25,7 @@ type Server struct {
 func New(c context.Context, p int, repository interfaces.Repository) (*Server, error) {
 	return &Server{
 		port: p,
-		serv: nil,
+		serv: &http.Server{Addr: fmt.Sprintf(":%d", p)},
 		repo: repository,
 		ctx:  c,
 	}, nil
@@ -37,10 +38,7 @@ func (s *Server) Start(ctx context.Context,
 	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
 	mux.HandleFunc("GET /api/v1/values/{user}", s.getAllValues)
 	mux.HandleFunc("POST /api/v1/addValue", sendToReplicas(s.addValue))
-	s.serv = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: mux,
-	}
+	s.serv.Handler = mux
 	log.Info(ctx, fmt.Sprintf("Server Started on %d", s.port))
 	err := s.serv.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
@@ -154,5 +152,11 @@ func (s *Server) getAllValues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Stop() error {
-	return s.serv.Shutdown(s.ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := s.serv.Shutdown(ctx)
+	if err != nil {
+		_ = s.serv.Close()
+	}
+	return err
 }
