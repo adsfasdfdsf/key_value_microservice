@@ -14,10 +14,13 @@ const (
 )
 
 type Config struct {
-	PostgresDSN string `env:"POSTGRES_DSN" env-default:"postgres://root:123@localhost:5432/db?sslmode=disable"`
-	RestPort    int    `env:"REST_PORT" env-default:"7070"`
-	GrpcPort    int    `env:"GRPC_PORT" env-default:"4040"`
-	ROLE        ROLE   `env:"ROLE" env-default:"replica"`
+	NodeID            string   `env:"NODE_ID"`
+	PeerGRPCAddresses []string `env:"PEER_GRPC_ADDRESSES" env-separator:","`
+	LeaderGRPCAddress string   `env:"LEADER_GRPC_ADDRESS"`
+	PostgresDSN       string   `env:"POSTGRES_DSN" env-default:"postgres://root:123@localhost:5432/db?sslmode=disable"`
+	RestPort          int      `env:"REST_PORT" env-default:"7070"`
+	GrpcPort          int      `env:"GRPC_PORT" env-default:"4040"`
+	ROLE              ROLE     `env:"ROLE" env-default:"replica"`
 }
 
 func New(ctx context.Context) *Config {

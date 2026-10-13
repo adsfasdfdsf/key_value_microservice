@@ -72,7 +72,7 @@ func (s *Server) Run() error {
 	}))
 
 	e.Use(LogInterceptor(s.ctx))
-
+	
 	e.POST("/api/v1/login", s.login) // передаем json {email, password} получаем в Secure http-only cookie refresh
 	//в json access + верификация пользователя
 

@@ -10,19 +10,12 @@ import (
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/config"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/nodeServer"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/storage/postgres"
-	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/transport/grpc"
-	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/transport/rest"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
 )
 
 const (
 	serviceName = "node storage"
 )
-
-type Node interface {
-	Start() error
-	Stop() error
-}
 
 func main() {
 	ctx := context.Background()
@@ -35,38 +28,35 @@ func main() {
 	}
 	defer repo.Close()
 	mainLogger := logger.GetLogger(ctx)
-	restServer, err := rest.New(ctx, cfg.RestPort, repo)
-	if err != nil || restServer == nil {
-		mainLogger.Error(ctx, "Server creation failed")
+	node, err := nodeServer.New(ctx, cfg, repo)
+	if err != nil {
+		mainLogger.Error(ctx, err.Error())
 		return
-	}
-	var node Node
-
-	switch cfg.ROLE {
-	case config.MASTER:
-		mc := grpc.NewMulticlient()
-		mc.AddClient(grpc.Client{Address: "replica1:4040"})
-		mc.AddClient(grpc.Client{Address: "replica2:4040"})
-		node = nodeServer.NewMaster(ctx, restServer, mc)
-	case config.REPLICA:
-		grpcServer := grpc.NewServer(ctx, cfg.GrpcPort, repo)
-		node = nodeServer.NewReplica(ctx, grpcServer, restServer, repo)
 	}
 
 	graceCh := make(chan os.Signal, 1)
 	signal.Notify(graceCh, syscall.SIGINT, syscall.SIGTERM)
 
+	done := make(chan error, 1)
 	go func() {
-		mainLogger.Info(ctx, fmt.Sprintf("Starting %v server", cfg.ROLE))
-		if err := node.Start(); err != nil {
+		mainLogger.Info(ctx, fmt.Sprintf("Starting %v node with REST and gRPC", node.Role()))
+		done <- node.Start()
+	}()
+	finished := false
+	select {
+	case <-graceCh:
+	case err := <-done:
+		finished = true
+		if err != nil {
 			mainLogger.Error(ctx, err.Error())
 		}
-	}()
-
-	<-graceCh
+	}
 
 	if err = node.Stop(); err != nil {
 		mainLogger.Error(ctx, "Graceful shutdown failed")
+	}
+	if !finished {
+		<-done
 	}
 	fmt.Println("Server stopped")
 }
