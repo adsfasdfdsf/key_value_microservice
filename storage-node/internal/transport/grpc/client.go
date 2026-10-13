@@ -16,7 +16,7 @@ type Client struct {
 	Address string
 }
 
-func (cl *Client) AppendValue(ctx context.Context, user, key, value string) (bool, error) {
+func (cl *Client) AppendValue(ctx context.Context, user, key, value string, ballot *desc.Ballot) (bool, error) {
 	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	log := logger.GetLogger(ctx)
 	if err != nil {
@@ -31,9 +31,10 @@ func (cl *Client) AppendValue(ctx context.Context, user, key, value string) (boo
 	defer cancel()
 
 	req := desc.AppendValueRequest{
-		User:  user,
-		Key:   key,
-		Value: value,
+		Ballot: ballot,
+		User:   user,
+		Key:    key,
+		Value:  value,
 	}
 	resp, err := c.AppendValue(timeout, &req)
 
@@ -60,4 +61,37 @@ func (cl *Client) SubmitValue(ctx context.Context, user, key, value string) erro
 		return status.Error(codes.Internal, "leader did not accept write")
 	}
 	return nil
+}
+
+func (cl *Client) Prepare(ctx context.Context, ballot *desc.Ballot) (*desc.PrepareResponse, error) {
+	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return desc.NewNodeServiceClient(conn).Prepare(ctx, &desc.PrepareRequest{Ballot: ballot})
+}
+
+func (cl *Client) AnnounceLeader(ctx context.Context, ballot *desc.Ballot, address string) (*desc.AnnounceLeaderResponse, error) {
+	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return desc.NewNodeServiceClient(conn).AnnounceLeader(ctx, &desc.AnnounceLeaderRequest{Ballot: ballot, LeaderGrpcAddress: address})
+}
+
+func (cl *Client) StartElection(ctx context.Context) (*desc.StartElectionResponse, error) {
+	conn, err := grpc.NewClient(cl.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return desc.NewNodeServiceClient(conn).StartElection(ctx, &desc.StartElectionRequest{})
 }

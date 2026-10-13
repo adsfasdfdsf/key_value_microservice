@@ -18,7 +18,15 @@ import (
 
 type SubmitValueHandler func(context.Context, string, string, string) error
 
+type ConsensusHandler interface {
+	AppendReplicaValue(context.Context, string, string, string, *desc.Ballot) error
+	Prepare(context.Context, *desc.PrepareRequest) (*desc.PrepareResponse, error)
+	AnnounceLeader(context.Context, *desc.AnnounceLeaderRequest) (*desc.AnnounceLeaderResponse, error)
+	StartElection(context.Context, *desc.StartElectionRequest) (*desc.StartElectionResponse, error)
+}
+
 type Server struct {
+	consensus   ConsensusHandler
 	submitValue SubmitValueHandler
 	repo        interfaces.Repository
 	port        int
@@ -26,9 +34,9 @@ type Server struct {
 	desc.UnimplementedNodeServiceServer
 }
 
-func NewServer(ctx context.Context, port int, repo interfaces.Repository, submitValue SubmitValueHandler) *Server {
+func NewServer(ctx context.Context, port int, repo interfaces.Repository, submitValue SubmitValueHandler, consensus ConsensusHandler) *Server {
 	log := logger.GetLogger(ctx)
-	server := &Server{submitValue: submitValue, repo: repo, port: port, gserv: grpc.NewServer(grpc.ChainUnaryInterceptor(ContextWithLogger(log)))}
+	server := &Server{consensus: consensus, submitValue: submitValue, repo: repo, port: port, gserv: grpc.NewServer(grpc.ChainUnaryInterceptor(ContextWithLogger(log)))}
 	reflection.Register(server.gserv)
 	desc.RegisterNodeServiceServer(server.gserv, server)
 	return server
@@ -60,7 +68,7 @@ func (s *Server) AppendValue(ctx context.Context, req *desc.AppendValueRequest) 
 	if req.User == "" || req.Key == "" {
 		return nil, status.Error(codes.InvalidArgument, "user and key are required")
 	}
-	err := s.repo.Add(ctx, req.User, req.Key, req.Value)
+	err := s.consensus.AppendReplicaValue(ctx, req.User, req.Key, req.Value, req.Ballot)
 	if err != nil {
 		return &desc.AppendValueResponse{
 			Success: false,
@@ -82,4 +90,14 @@ func (s *Server) SubmitValue(ctx context.Context, req *desc.AppendValueRequest) 
 		return nil, err
 	}
 	return &desc.AppendValueResponse{Success: true}, nil
+}
+
+func (s *Server) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.PrepareResponse, error) {
+	return s.consensus.Prepare(ctx, req)
+}
+func (s *Server) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderRequest) (*desc.AnnounceLeaderResponse, error) {
+	return s.consensus.AnnounceLeader(ctx, req)
+}
+func (s *Server) StartElection(ctx context.Context, req *desc.StartElectionRequest) (*desc.StartElectionResponse, error) {
+	return s.consensus.StartElection(ctx, req)
 }

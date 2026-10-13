@@ -3,6 +3,7 @@ services:
     build: ./storage-node
     environment:
       NODE_ID: node-1
+      NODE_GRPC_ADDRESS: master:4040
       ROLE: master
       PEER_GRPC_ADDRESSES: replica1:4040,replica2:4040
       REST_PORT: "7070"
@@ -20,6 +21,7 @@ services:
     build: ./storage-node
     environment:
       NODE_ID: node-2
+      NODE_GRPC_ADDRESS: replica1:4040
       ROLE: replica
       PEER_GRPC_ADDRESSES: master:4040,replica2:4040
       LEADER_GRPC_ADDRESS: master:4040
@@ -34,6 +36,7 @@ services:
     build: ./storage-node
     environment:
       NODE_ID: node-3
+      NODE_GRPC_ADDRESS: replica2:4040
       ROLE: replica
       PEER_GRPC_ADDRESSES: master:4040,replica1:4040
       LEADER_GRPC_ADDRESS: master:4040

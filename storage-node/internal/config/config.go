@@ -14,6 +14,7 @@ const (
 )
 
 type Config struct {
+	NodeGRPCAddress   string   `env:"NODE_GRPC_ADDRESS"`
 	NodeID            string   `env:"NODE_ID"`
 	PeerGRPCAddresses []string `env:"PEER_GRPC_ADDRESSES" env-separator:","`
 	LeaderGRPCAddress string   `env:"LEADER_GRPC_ADDRESS"`
