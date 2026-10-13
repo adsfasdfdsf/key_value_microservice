@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	desc "gitlab.com/adsfasdfdsf-group/key-value-service/pkg/node_v1"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/config"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/interfaces"
@@ -23,6 +25,12 @@ import (
 )
 
 type Node struct {
+	ownGRPCAddress    string
+	peers             []string
+	consensusStore    interfaces.ConsensusStore
+	promisedBallot    *desc.Ballot
+	observedRound     uint64
+	electionMu        sync.Mutex
 	id                string
 	ctx               context.Context
 	restServer        *rest.Server
@@ -40,6 +48,32 @@ func New(ctx context.Context, cfg *config.Config, repo interfaces.Repository) (*
 	if strings.TrimSpace(cfg.NodeID) == "" {
 		return nil, fmt.Errorf("node ID is required")
 	}
+	if err := validateGRPCAddress(cfg.NodeGRPCAddress); err != nil {
+		return nil, err
+	}
+	if len(cfg.PeerGRPCAddresses) != 2 {
+		return nil, fmt.Errorf("three-node cluster requires exactly two peers")
+	}
+	seen := map[string]bool{cfg.NodeGRPCAddress: true}
+	for _, address := range cfg.PeerGRPCAddresses {
+		if err := validateGRPCAddress(address); err != nil {
+			return nil, err
+		}
+		if seen[address] {
+			return nil, fmt.Errorf("duplicate or self peer address")
+		}
+		seen[address] = true
+	}
+	store, ok := repo.(interfaces.ConsensusStore)
+	if !ok {
+		return nil, fmt.Errorf("repository must persist consensus promises")
+	}
+	loadCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	promised, err := store.LoadPromisedBallot(loadCtx)
+	cancel()
+	if err != nil {
+		return nil, fmt.Errorf("load promised ballot: %w", err)
+	}
 	restServer, err := rest.New(ctx, cfg.RestPort, repo)
 	if err != nil {
 		return nil, err
@@ -48,10 +82,16 @@ func New(ctx context.Context, cfg *config.Config, repo interfaces.Repository) (*
 	for _, address := range cfg.PeerGRPCAddresses {
 		clients.AddClient(grpc.Client{Address: address})
 	}
-	node := &Node{id: cfg.NodeID, ctx: ctx, restServer: restServer, repo: repo, clients: clients}
-	node.grpcServer = grpc.NewServer(ctx, cfg.GrpcPort, repo, node.submitValue)
+	node := &Node{id: cfg.NodeID, ctx: ctx, restServer: restServer, repo: repo, clients: clients,
+		ownGRPCAddress: cfg.NodeGRPCAddress, peers: append([]string(nil), cfg.PeerGRPCAddresses...), consensusStore: store, promisedBallot: cloneBallot(promised)}
+	node.grpcServer = grpc.NewServer(ctx, cfg.GrpcPort, repo, node.submitValue, node)
 	if err := node.SetRole(cfg.ROLE, cfg.LeaderGRPCAddress); err != nil {
 		return nil, err
+	}
+	if promised != nil {
+		node.role = config.REPLICA
+		node.leaderGRPCAddress = ""
+		node.observedRound = promised.Round
 	}
 	return node, nil
 }
@@ -133,13 +173,18 @@ func (n *Node) routeWrite(_ func(http.ResponseWriter, *http.Request)) func(http.
 		n.mu.RLock()
 		if n.role == config.MASTER {
 			err = n.storeLeaderValue(ctx, data.User, data.Key, data.Value)
-		} else if n.leaderGRPCAddress == "" {
-			err = status.Error(codes.Unavailable, "leader unknown")
+			n.mu.RUnlock()
 		} else {
-			client := grpc.Client{Address: n.leaderGRPCAddress}
-			err = client.SubmitValue(ctx, data.User, data.Key, data.Value)
+			address := n.leaderGRPCAddress
+			n.mu.RUnlock()
+			// Release the role lock before forwarding: the returning replication RPC needs it.
+			if address == "" {
+				err = status.Error(codes.Unavailable, "leader unknown")
+			} else {
+				client := grpc.Client{Address: address}
+				err = client.SubmitValue(ctx, data.User, data.Key, data.Value)
+			}
 		}
-		n.mu.RUnlock()
 		if err != nil {
 			logger.GetLogger(n.ctx).Warn(n.ctx, "Write request failed")
 			code := http.StatusBadGateway
@@ -170,11 +215,28 @@ func (n *Node) submitValue(ctx context.Context, user, key, value string) error {
 func (n *Node) storeLeaderValue(ctx context.Context, user, key, value string) error {
 	log := logger.GetLogger(n.ctx)
 	ctx = context.WithValue(ctx, logger.LoggerKey, log)
-	if err := n.clients.AppendValue(ctx, user, key, value); err != nil {
+	if err := n.clients.AppendValue(ctx, user, key, value, cloneBallot(n.promisedBallot)); err != nil {
 		log.Warn(ctx, "Failed to send request to replicas")
 	}
 	if err := n.repo.Add(ctx, user, key, value); err != nil {
 		return status.Error(codes.Internal, "could not store value")
+	}
+	return nil
+}
+
+// AppendReplicaValue enforces the saved promise on replicated writes.
+// Empty ballots are accepted only before the first election, for initial bootstrap.
+func (n *Node) AppendReplicaValue(ctx context.Context, user, key, value string, ballot *desc.Ballot) error {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if compareBallots(ballot, n.promisedBallot) != 0 {
+		return status.Error(codes.FailedPrecondition, "replication ballot does not match promised ballot")
+	}
+	if ballot != nil && !validBallot(ballot) {
+		return status.Error(codes.InvalidArgument, "invalid replication ballot")
+	}
+	if err := n.repo.Add(ctx, user, key, value); err != nil {
+		return status.Error(codes.Internal, "could not store replicated value")
 	}
 	return nil
 }

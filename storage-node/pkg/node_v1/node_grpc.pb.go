@@ -19,15 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_Prepare_FullMethodName     = "/node_v1.NodeService/Prepare"
-	NodeService_SubmitValue_FullMethodName = "/node_v1.NodeService/SubmitValue"
-	NodeService_AppendValue_FullMethodName = "/node_v1.NodeService/AppendValue"
+	NodeService_StartElection_FullMethodName  = "/node_v1.NodeService/StartElection"
+	NodeService_AnnounceLeader_FullMethodName = "/node_v1.NodeService/AnnounceLeader"
+	NodeService_Prepare_FullMethodName        = "/node_v1.NodeService/Prepare"
+	NodeService_SubmitValue_FullMethodName    = "/node_v1.NodeService/SubmitValue"
+	NodeService_AppendValue_FullMethodName    = "/node_v1.NodeService/AppendValue"
 )
 
 // NodeServiceClient is the client API for NodeService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type NodeServiceClient interface {
+	StartElection(ctx context.Context, in *StartElectionRequest, opts ...grpc.CallOption) (*StartElectionResponse, error)
+	AnnounceLeader(ctx context.Context, in *AnnounceLeaderRequest, opts ...grpc.CallOption) (*AnnounceLeaderResponse, error)
 	Prepare(ctx context.Context, in *PrepareRequest, opts ...grpc.CallOption) (*PrepareResponse, error)
 	SubmitValue(ctx context.Context, in *AppendValueRequest, opts ...grpc.CallOption) (*AppendValueResponse, error)
 	AppendValue(ctx context.Context, in *AppendValueRequest, opts ...grpc.CallOption) (*AppendValueResponse, error)
@@ -39,6 +43,26 @@ type nodeServiceClient struct {
 
 func NewNodeServiceClient(cc grpc.ClientConnInterface) NodeServiceClient {
 	return &nodeServiceClient{cc}
+}
+
+func (c *nodeServiceClient) StartElection(ctx context.Context, in *StartElectionRequest, opts ...grpc.CallOption) (*StartElectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartElectionResponse)
+	err := c.cc.Invoke(ctx, NodeService_StartElection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) AnnounceLeader(ctx context.Context, in *AnnounceLeaderRequest, opts ...grpc.CallOption) (*AnnounceLeaderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnnounceLeaderResponse)
+	err := c.cc.Invoke(ctx, NodeService_AnnounceLeader_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *nodeServiceClient) Prepare(ctx context.Context, in *PrepareRequest, opts ...grpc.CallOption) (*PrepareResponse, error) {
@@ -75,6 +99,8 @@ func (c *nodeServiceClient) AppendValue(ctx context.Context, in *AppendValueRequ
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
 type NodeServiceServer interface {
+	StartElection(context.Context, *StartElectionRequest) (*StartElectionResponse, error)
+	AnnounceLeader(context.Context, *AnnounceLeaderRequest) (*AnnounceLeaderResponse, error)
 	Prepare(context.Context, *PrepareRequest) (*PrepareResponse, error)
 	SubmitValue(context.Context, *AppendValueRequest) (*AppendValueResponse, error)
 	AppendValue(context.Context, *AppendValueRequest) (*AppendValueResponse, error)
@@ -88,6 +114,12 @@ type NodeServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedNodeServiceServer struct{}
 
+func (UnimplementedNodeServiceServer) StartElection(context.Context, *StartElectionRequest) (*StartElectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartElection not implemented")
+}
+func (UnimplementedNodeServiceServer) AnnounceLeader(context.Context, *AnnounceLeaderRequest) (*AnnounceLeaderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AnnounceLeader not implemented")
+}
 func (UnimplementedNodeServiceServer) Prepare(context.Context, *PrepareRequest) (*PrepareResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Prepare not implemented")
 }
@@ -116,6 +148,42 @@ func RegisterNodeServiceServer(s grpc.ServiceRegistrar, srv NodeServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&NodeService_ServiceDesc, srv)
+}
+
+func _NodeService_StartElection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartElectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).StartElection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_StartElection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).StartElection(ctx, req.(*StartElectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_AnnounceLeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnnounceLeaderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).AnnounceLeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_AnnounceLeader_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).AnnounceLeader(ctx, req.(*AnnounceLeaderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _NodeService_Prepare_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -179,6 +247,14 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "node_v1.NodeService",
 	HandlerType: (*NodeServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "StartElection",
+			Handler:    _NodeService_StartElection_Handler,
+		},
+		{
+			MethodName: "AnnounceLeader",
+			Handler:    _NodeService_AnnounceLeader_Handler,
+		},
 		{
 			MethodName: "Prepare",
 			Handler:    _NodeService_Prepare_Handler,
