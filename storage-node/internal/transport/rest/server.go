@@ -3,67 +3,73 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/interfaces"
 	"io"
 	"net/http"
+	"time"
 
 	"gitlab.com/adsfasdfdsf-group/key-value-service/internal/models"
 	"gitlab.com/adsfasdfdsf-group/key-value-service/pkg/logger"
 )
 
-type Repository interface{
-	Add(key, value string) error
-	Get(key string) (string, error)
-}
-
 type Server struct {
 	port int
 	serv *http.Server
 
-	repo Repository
-	ctx context.Context
+	repo interfaces.Repository
+	ctx  context.Context
 }
 
-func New(c context.Context, p int, repository Repository) (*Server, error){
+func New(c context.Context, p int, repository interfaces.Repository) (*Server, error) {
 	return &Server{
 		port: p,
-		serv: nil,
+		serv: &http.Server{Addr: fmt.Sprintf(":%d", p)},
 		repo: repository,
-		ctx: c,
+		ctx:  c,
 	}, nil
 }
 
-func (s *Server) Start(ctx context.Context, 
+func (s *Server) Start(ctx context.Context,
 	sendToReplicas func(func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request)) error {
 	log := logger.GetLogger(ctx)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
+	mux.HandleFunc("GET /api/v1/values/{user}", s.getAllValues)
 	mux.HandleFunc("POST /api/v1/addValue", sendToReplicas(s.addValue))
-	s.serv = &http.Server{
-		Addr: 		fmt.Sprintf(":%d", s.port), 
-		Handler: 	mux,
-	}
+	s.serv.Handler = mux
 	log.Info(ctx, fmt.Sprintf("Server Started on %d", s.port))
 	err := s.serv.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
-        return err
-    }
-    return nil
+		return err
+	}
+	return nil
 }
 
-func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request){
+func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
+	user := r.URL.Query().Get("user")
+	if user == "" || key == "" {
+		http.Error(w, "user and key are required", http.StatusBadRequest)
+		return
+	}
 	log := logger.GetLogger(s.ctx)
 	log.Info(s.ctx, fmt.Sprintf("new Get value by key request %v", string(key)))
-	value, err := s.repo.Get(key)
+	value, err := s.repo.Get(r.Context(), user, key)
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		status := http.StatusInternalServerError
+		if errors.Is(err, interfaces.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
 		log.Warn(s.ctx, "response repo error")
-		w.Write([]byte("Key not found"))
+		w.Write([]byte(http.StatusText(status)))
 		return
 	}
 	resp := models.RestMessage{
-		Key: key,
+		User:  user,
+		Key:   key,
 		Value: value,
 	}
 	encodedresp, err := json.Marshal(resp)
@@ -73,11 +79,12 @@ func (s *Server) getValueByKey(w http.ResponseWriter, r *http.Request){
 		w.Write([]byte(err.Error()))
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(encodedresp)
 }
 
-func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
+func (s *Server) addValue(w http.ResponseWriter, r *http.Request) {
 	request, err := io.ReadAll(r.Body)
 	log := logger.GetLogger(s.ctx)
 	log.Info(s.ctx, fmt.Sprintf("new request %v", string(request)))
@@ -95,7 +102,11 @@ func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
 		w.Write([]byte("Wrong Request Format"))
 		return
 	}
-	err = s.repo.Add(restRequest.Key, restRequest.Value)
+	if restRequest.User == "" || restRequest.Key == "" {
+		http.Error(w, "user and key are required", http.StatusBadRequest)
+		return
+	}
+	err = s.repo.Add(r.Context(), restRequest.User, restRequest.Key, restRequest.Value)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		log.Error(s.ctx, "response failed")
@@ -105,6 +116,47 @@ func (s *Server) addValue(w http.ResponseWriter, r *http.Request){
 	w.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) getAllValues(w http.ResponseWriter, r *http.Request) {
+	user := r.PathValue("user")
+	if user == "" {
+		http.Error(w, "user is required", http.StatusBadRequest)
+		return
+	}
+	log := logger.GetLogger(s.ctx)
+	log.Info(s.ctx, fmt.Sprintf("new Get all values request %v", string(user)))
+	values, err := s.repo.GetAll(r.Context(), user)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, interfaces.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		w.WriteHeader(status)
+		log.Warn(s.ctx, "response repo error")
+		w.Write([]byte(http.StatusText(status)))
+		return
+	}
+	resp := models.RestAllValuesMessage{
+		User:   user,
+		Values: values,
+	}
+	encodedresp, err := json.Marshal(resp)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		log.Error(s.ctx, "response json error")
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(encodedresp)
+}
+
 func (s *Server) Stop() error {
-	return s.serv.Shutdown(s.ctx)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := s.serv.Shutdown(ctx)
+	if err != nil {
+		_ = s.serv.Close()
+	}
+	return err
 }
