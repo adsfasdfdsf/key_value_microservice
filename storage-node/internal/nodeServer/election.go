@@ -32,7 +32,6 @@ func validBallot(ballot *desc.Ballot) bool {
 	return ballot != nil && ballot.Round > 0 && strings.TrimSpace(ballot.NodeId) != ""
 }
 
-// Prepare gives an idempotent, durable promise; a higher promise steps down the node.
 func (n *Node) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.PrepareResponse, error) {
 	if req == nil || !validBallot(req.Ballot) {
 		return nil, status.Error(codes.InvalidArgument, "valid ballot required")
@@ -41,7 +40,6 @@ func (n *Node) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.Pre
 	defer n.mu.Unlock()
 	accepted, current, err := n.consensusStore.TryPromise(ctx, req.Ballot)
 	if err != nil {
-		// Commit failure can have an unknown outcome; conservatively stop serving as leader.
 		if compareBallots(req.Ballot, n.promisedBallot) > 0 {
 			n.role = config.REPLICA
 			n.leaderGRPCAddress = ""
@@ -51,6 +49,7 @@ func (n *Node) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.Pre
 	if compareBallots(current, n.promisedBallot) > 0 {
 		n.role = config.REPLICA
 		n.leaderGRPCAddress = ""
+		n.resetElectionTimeout()
 	}
 	n.promisedBallot = cloneBallot(current)
 	if current != nil && current.Round > n.observedRound {
@@ -59,7 +58,6 @@ func (n *Node) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.Pre
 	return &desc.PrepareResponse{Promised: accepted, PromisedBallot: cloneBallot(current), NodeId: n.id}, nil
 }
 
-// AnnounceLeader only accepts the exact ballot previously promised by this node.
 func (n *Node) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderRequest) (*desc.AnnounceLeaderResponse, error) {
 	if req == nil || !validBallot(req.Ballot) {
 		return nil, status.Error(codes.InvalidArgument, "valid ballot required")
@@ -70,7 +68,6 @@ func (n *Node) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderReque
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	accepted := compareBallots(req.Ballot, n.promisedBallot) == 0
-	// Self announcements are not exposed as a way to bypass StartElection's majority check.
 	if req.Ballot.NodeId == n.id {
 		accepted = false
 	}
@@ -84,6 +81,7 @@ func (n *Node) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderReque
 	if accepted {
 		n.role = config.REPLICA
 		n.leaderGRPCAddress = req.LeaderGrpcAddress
+		n.resetElectionTimeout()
 	}
 	return &desc.AnnounceLeaderResponse{Accepted: accepted, PromisedBallot: cloneBallot(n.promisedBallot), NodeId: n.id}, nil
 }
@@ -103,19 +101,27 @@ func (n *Node) observeBallot(ballot *desc.Ballot) {
 	}
 }
 
-// StartElection performs one manually triggered attempt, with no heartbeat or retry loop.
-// It establishes a role, not journal recovery or consensus for key-value writes.
 func (n *Node) StartElection(ctx context.Context, _ *desc.StartElectionRequest) (*desc.StartElectionResponse, error) {
+	return n.startElection(ctx, false)
+}
+
+func (n *Node) startElection(ctx context.Context, automatic bool) (*desc.StartElectionResponse, error) {
 	n.electionMu.Lock()
 	defer n.electionMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	n.mu.RLock()
+	n.mu.Lock()
+	if automatic && ((n.role == config.MASTER && validBallot(n.promisedBallot)) ||
+		(n.role != config.MASTER && time.Now().Before(n.electionDeadline))) {
+		n.mu.Unlock()
+		return &desc.StartElectionResponse{}, nil
+	}
+	n.resetElectionTimeout()
 	round := n.observedRound
 	if n.promisedBallot != nil && n.promisedBallot.Round > round {
 		round = n.promisedBallot.Round
 	}
-	n.mu.RUnlock()
+	n.mu.Unlock()
 	if round == math.MaxUint64 {
 		return nil, status.Error(codes.ResourceExhausted, "ballot round exhausted")
 	}
@@ -196,6 +202,7 @@ func (n *Node) StartElection(ctx context.Context, _ *desc.StartElectionRequest) 
 	}
 	n.role = config.MASTER
 	n.leaderGRPCAddress = ""
+	n.resetElectionTimeout()
 	result.Elected = true
 	return result, nil
 }

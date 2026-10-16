@@ -12,7 +12,6 @@ var ErrInvalidRefresh = errors.New("refresh token is missing or expired")
 
 type TokenRepoPg struct{ db *pgxpool.Pool }
 
-// New also creates the token table for databases initialized before token storage existed.
 func New(ctx context.Context, db *pgxpool.Pool) (*TokenRepoPg, error) {
 	_, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS jwt_tokens (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -44,7 +43,6 @@ func (r *TokenRepoPg) Save(ctx context.Context, email, access, refresh string, a
 	return nil
 }
 
-// Rotate atomically consumes the old refresh token and stores the new pair.
 func (r *TokenRepoPg) Rotate(ctx context.Context, email, oldRefresh, access, refresh string, accessExpiry, refreshExpiry time.Time) error {
 	result, err := r.db.Exec(ctx, `
         UPDATE jwt_tokens SET access_token = $3, refresh_token = $4,

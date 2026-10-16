@@ -30,6 +30,7 @@ type Node struct {
 	consensusStore    interfaces.ConsensusStore
 	promisedBallot    *desc.Ballot
 	observedRound     uint64
+	electionDeadline  time.Time
 	electionMu        sync.Mutex
 	id                string
 	ctx               context.Context
@@ -116,6 +117,7 @@ func (n *Node) SetRole(role config.ROLE, leaderGRPCAddress string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.role, n.leaderGRPCAddress = role, leaderGRPCAddress
+	n.resetElectionTimeout()
 	return nil
 }
 
@@ -143,6 +145,7 @@ func (n *Node) Start() error {
 	var group errgroup.Group
 	group.Go(func() error { defer cancel(); return n.grpcServer.Start(ctx) })
 	group.Go(func() error { defer cancel(); return n.restServer.Start(ctx, n.routeWrite) })
+	group.Go(func() error { n.runHeartbeat(ctx); return nil })
 	err := group.Wait()
 	<-stopped
 	return err
@@ -177,7 +180,6 @@ func (n *Node) routeWrite(_ func(http.ResponseWriter, *http.Request)) func(http.
 		} else {
 			address := n.leaderGRPCAddress
 			n.mu.RUnlock()
-			// Release the role lock before forwarding: the returning replication RPC needs it.
 			if address == "" {
 				err = status.Error(codes.Unavailable, "leader unknown")
 			} else {
@@ -224,8 +226,6 @@ func (n *Node) storeLeaderValue(ctx context.Context, user, key, value string) er
 	return nil
 }
 
-// AppendReplicaValue enforces the saved promise on replicated writes.
-// Empty ballots are accepted only before the first election, for initial bootstrap.
 func (n *Node) AppendReplicaValue(ctx context.Context, user, key, value string, ballot *desc.Ballot) error {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
