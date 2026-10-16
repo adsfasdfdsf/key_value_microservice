@@ -14,7 +14,6 @@ type Repository interface {
 	GetAll(ctx context.Context, user string) (map[string]string, error)
 }
 
-// ConsensusStore persists promises independently of the key-value repository.
 type ConsensusStore interface {
 	LoadPromisedBallot(context.Context) (*desc.Ballot, error)
 	TryPromise(context.Context, *desc.Ballot) (bool, *desc.Ballot, error)

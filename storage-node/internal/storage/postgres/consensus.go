@@ -33,7 +33,6 @@ func (s *Storage) LoadPromisedBallot(ctx context.Context) (*desc.Ballot, error) 
 	return readPromise(s.db.QueryRow(ctx, `SELECT promised_round::text, promised_node_id FROM consensus_state WHERE id=1`))
 }
 
-// TryPromise serializes comparisons in PostgreSQL and commits before reporting acceptance.
 func (s *Storage) TryPromise(ctx context.Context, ballot *desc.Ballot) (bool, *desc.Ballot, error) {
 	if ballot == nil || ballot.Round == 0 || strings.TrimSpace(ballot.NodeId) == "" {
 		return false, nil, fmt.Errorf("invalid ballot")
