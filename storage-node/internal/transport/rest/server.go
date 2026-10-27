@@ -25,20 +25,31 @@ type Server struct {
 func New(c context.Context, p int, repository interfaces.Repository) (*Server, error) {
 	return &Server{
 		port: p,
-		serv: &http.Server{Addr: fmt.Sprintf(":%d", p)},
+		serv: &http.Server{Addr: fmt.Sprintf(":%d", p), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 20},
 		repo: repository,
 		ctx:  c,
 	}, nil
 }
 
 func (s *Server) Start(ctx context.Context,
-	sendToReplicas func(func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request)) error {
+	sendToReplicas func(func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request), health func(http.ResponseWriter, *http.Request), ready func() bool) error {
 	log := logger.GetLogger(ctx)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/value/{key}", s.getValueByKey)
 	mux.HandleFunc("GET /api/v1/values/{user}", s.getAllValues)
 	mux.HandleFunc("POST /api/v1/addValue", sendToReplicas(s.addValue))
-	s.serv.Handler = mux
+	mux.HandleFunc("PUT /api/v1/addValue", sendToReplicas(s.addValue))
+	mux.HandleFunc("GET /health/live", health)
+	mux.HandleFunc("GET /health/ready", health)
+	mux.HandleFunc("GET /api/v1/status", health)
+	s.serv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path != "/health/live" && r.URL.Path != "/health/ready" && r.URL.Path != "/api/v1/status") && !ready() {
+			http.Error(w, "node recovering", http.StatusServiceUnavailable)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+
 	log.Info(ctx, fmt.Sprintf("Server Started on %d", s.port))
 	err := s.serv.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {

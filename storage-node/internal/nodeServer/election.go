@@ -42,12 +42,14 @@ func (n *Node) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.Pre
 	if err != nil {
 		if compareBallots(req.Ballot, n.promisedBallot) > 0 {
 			n.role = config.REPLICA
+			n.ready = false
 			n.leaderGRPCAddress = ""
 		}
 		return nil, status.Error(codes.Internal, "could not persist promise")
 	}
 	if compareBallots(current, n.promisedBallot) > 0 {
 		n.role = config.REPLICA
+		n.ready = false
 		n.leaderGRPCAddress = ""
 		n.resetElectionTimeout()
 	}
@@ -55,7 +57,21 @@ func (n *Node) Prepare(ctx context.Context, req *desc.PrepareRequest) (*desc.Pre
 	if current != nil && current.Round > n.observedRound {
 		n.observedRound = current.Round
 	}
-	return &desc.PrepareResponse{Promised: accepted, PromisedBallot: cloneBallot(current), NodeId: n.id}, nil
+	reply := &desc.PrepareResponse{Promised: accepted, PromisedBallot: cloneBallot(current), NodeId: n.id}
+	if accepted {
+		if err := n.reloadJournal(ctx); err != nil {
+			return nil, status.Error(codes.Internal, "read journal after promise")
+		}
+		reply.Entries, reply.CommittedIndex = n.entries, n.committedIndex
+		if len(n.entries) == 0 {
+			records, err := n.journalStore.ReadRecords(ctx)
+			if err != nil {
+				return nil, status.Error(codes.Internal, "read bootstrap state")
+			}
+			reply.Records = records
+		}
+	}
+	return reply, nil
 }
 
 func (n *Node) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderRequest) (*desc.AnnounceLeaderResponse, error) {
@@ -80,10 +96,13 @@ func (n *Node) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderReque
 	accepted = accepted && known
 	if accepted {
 		n.role = config.REPLICA
+		n.ready = false
 		n.leaderGRPCAddress = req.LeaderGrpcAddress
+		n.leaderCommitIndex = req.CommittedIndex
+		n.ready = n.committedIndex >= req.CommittedIndex
 		n.resetElectionTimeout()
 	}
-	return &desc.AnnounceLeaderResponse{Accepted: accepted, PromisedBallot: cloneBallot(n.promisedBallot), NodeId: n.id}, nil
+	return &desc.AnnounceLeaderResponse{Accepted: accepted, PromisedBallot: cloneBallot(n.promisedBallot), NodeId: n.id, CommittedIndex: n.committedIndex}, nil
 }
 
 func (n *Node) observeBallot(ballot *desc.Ballot) {
@@ -97,6 +116,7 @@ func (n *Node) observeBallot(ballot *desc.Ballot) {
 	}
 	if compareBallots(ballot, n.promisedBallot) > 0 {
 		n.role = config.REPLICA
+		n.ready = false
 		n.leaderGRPCAddress = ""
 	}
 }
@@ -108,7 +128,9 @@ func (n *Node) StartElection(ctx context.Context, _ *desc.StartElectionRequest) 
 func (n *Node) startElection(ctx context.Context, automatic bool) (*desc.StartElectionResponse, error) {
 	n.electionMu.Lock()
 	defer n.electionMu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	n.proposalMu.Lock()
+	defer n.proposalMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	n.mu.Lock()
 	if automatic && ((n.role == config.MASTER && validBallot(n.promisedBallot)) ||
@@ -147,6 +169,7 @@ func (n *Node) startElection(ctx context.Context, automatic bool) (*desc.StartEl
 		}(address)
 	}
 	voters := map[string]bool{n.id: true}
+	recovery := []*desc.PrepareResponse{self}
 	higher := false
 	for range n.peers {
 		entry := <-promises
@@ -159,11 +182,21 @@ func (n *Node) startElection(ctx context.Context, automatic bool) (*desc.StartEl
 			higher = true
 		}
 		if reply.Promised && compareBallots(reply.PromisedBallot, ballot) == 0 && strings.TrimSpace(reply.NodeId) != "" {
+			if !voters[reply.NodeId] {
+				recovery = append(recovery, reply)
+			}
 			voters[reply.NodeId] = true
 		}
 	}
 	if len(voters) < 2 || higher {
 		return result, nil
+	}
+	entries, recoveryErr := recoverEntries(ballot, recovery)
+	if recoveryErr != nil {
+		return nil, status.Error(codes.FailedPrecondition, recoveryErr.Error())
+	}
+	if err := n.chooseEntries(ctx, ballot, entries, true, uint64(len(entries))); err != nil {
+		return result, err
 	}
 	type announceResult struct {
 		reply *desc.AnnounceLeaderResponse
@@ -173,7 +206,7 @@ func (n *Node) startElection(ctx context.Context, automatic bool) (*desc.StartEl
 	for _, address := range n.peers {
 		go func(address string) {
 			client := transport.Client{Address: address}
-			reply, err := client.AnnounceLeader(ctx, ballot, n.ownGRPCAddress)
+			reply, err := client.AnnounceLeader(ctx, ballot, n.ownGRPCAddress, uint64(len(entries)))
 			announcements <- announceResult{reply, err}
 		}(address)
 	}
@@ -201,6 +234,8 @@ func (n *Node) startElection(ctx context.Context, automatic bool) (*desc.StartEl
 		return result, nil
 	}
 	n.role = config.MASTER
+	n.ready = true
+	n.leaderCommitIndex = n.committedIndex
 	n.leaderGRPCAddress = ""
 	n.resetElectionTimeout()
 	result.Elected = true

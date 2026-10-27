@@ -20,6 +20,8 @@ type SubmitValueHandler func(context.Context, string, string, string) error
 
 type ConsensusHandler interface {
 	AppendReplicaValue(context.Context, string, string, string, *desc.Ballot) error
+	AcceptEntries(context.Context, *desc.AcceptEntriesRequest) (*desc.JournalResponse, error)
+	CommitEntries(context.Context, *desc.CommitEntriesRequest) (*desc.JournalResponse, error)
 	Prepare(context.Context, *desc.PrepareRequest) (*desc.PrepareResponse, error)
 	AnnounceLeader(context.Context, *desc.AnnounceLeaderRequest) (*desc.AnnounceLeaderResponse, error)
 	StartElection(context.Context, *desc.StartElectionRequest) (*desc.StartElectionResponse, error)
@@ -36,7 +38,7 @@ type Server struct {
 
 func NewServer(ctx context.Context, port int, repo interfaces.Repository, submitValue SubmitValueHandler, consensus ConsensusHandler) *Server {
 	log := logger.GetLogger(ctx)
-	server := &Server{consensus: consensus, submitValue: submitValue, repo: repo, port: port, gserv: grpc.NewServer(grpc.ChainUnaryInterceptor(ContextWithLogger(log)))}
+	server := &Server{consensus: consensus, submitValue: submitValue, repo: repo, port: port, gserv: grpc.NewServer(grpc.MaxRecvMsgSize(32<<20), grpc.MaxSendMsgSize(32<<20), grpc.ChainUnaryInterceptor(ContextWithLogger(log)))}
 	reflection.Register(server.gserv)
 	desc.RegisterNodeServiceServer(server.gserv, server)
 	return server
@@ -65,7 +67,7 @@ func (s *Server) Stop() {
 }
 
 func (s *Server) AppendValue(ctx context.Context, req *desc.AppendValueRequest) (*desc.AppendValueResponse, error) {
-	if req.User == "" || req.Key == "" {
+	if req == nil || req.User == "" || req.Key == "" {
 		return nil, status.Error(codes.InvalidArgument, "user and key are required")
 	}
 	err := s.consensus.AppendReplicaValue(ctx, req.User, req.Key, req.Value, req.Ballot)
@@ -80,7 +82,7 @@ func (s *Server) AppendValue(ctx context.Context, req *desc.AppendValueRequest) 
 }
 
 func (s *Server) SubmitValue(ctx context.Context, req *desc.AppendValueRequest) (*desc.AppendValueResponse, error) {
-	if req.User == "" || req.Key == "" {
+	if req == nil || req.User == "" || req.Key == "" {
 		return nil, status.Error(codes.InvalidArgument, "user and key are required")
 	}
 	if s.submitValue == nil {
@@ -100,4 +102,11 @@ func (s *Server) AnnounceLeader(ctx context.Context, req *desc.AnnounceLeaderReq
 }
 func (s *Server) StartElection(ctx context.Context, req *desc.StartElectionRequest) (*desc.StartElectionResponse, error) {
 	return s.consensus.StartElection(ctx, req)
+}
+
+func (s *Server) AcceptEntries(ctx context.Context, req *desc.AcceptEntriesRequest) (*desc.JournalResponse, error) {
+	return s.consensus.AcceptEntries(ctx, req)
+}
+func (s *Server) CommitEntries(ctx context.Context, req *desc.CommitEntriesRequest) (*desc.JournalResponse, error) {
+	return s.consensus.CommitEntries(ctx, req)
 }
