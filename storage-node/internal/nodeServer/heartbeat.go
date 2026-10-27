@@ -43,20 +43,38 @@ func (n *Node) runHeartbeat(ctx context.Context) {
 }
 
 func (n *Node) sendHeartbeat(ctx context.Context, ballot *desc.Ballot) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	n.proposalMu.Lock()
+	defer n.proposalMu.Unlock()
+	probeCtx, probeCancel := context.WithTimeout(ctx, time.Second)
+	_, storageErr := n.repo.GetAll(probeCtx, "__health_probe__")
+	probeCancel()
+	if storageErr != nil {
+		n.mu.Lock()
+		n.role, n.leaderGRPCAddress, n.ready = config.REPLICA, "", false
+		n.resetElectionTimeout()
+		n.mu.Unlock()
+		return
+	}
+	n.mu.RLock()
+	committed := n.committedIndex
+	n.mu.RUnlock()
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	replies := make(chan *desc.AnnounceLeaderResponse, len(n.peers))
 	for _, address := range n.peers {
 		go func(address string) {
 			client := transport.Client{Address: address}
-			reply, err := client.AnnounceLeader(ctx, ballot, n.ownGRPCAddress)
+			reply, err := client.AnnounceLeader(ctx, ballot, n.ownGRPCAddress, committed)
 			if err == nil && !reply.Accepted && compareBallots(reply.PromisedBallot, ballot) < 0 {
 				if promise, prepareErr := client.Prepare(ctx, ballot); prepareErr == nil {
 					n.observeBallot(promise.PromisedBallot)
 					if promise.Promised {
-						reply, err = client.AnnounceLeader(ctx, ballot, n.ownGRPCAddress)
+						reply, err = client.AnnounceLeader(ctx, ballot, n.ownGRPCAddress, committed)
 					}
 				}
+			}
+			if err == nil && reply != nil && reply.Accepted {
+				n.syncPeer(ctx, address, ballot, reply.CommittedIndex)
 			}
 			if err != nil {
 				reply = nil
@@ -81,7 +99,7 @@ func (n *Node) sendHeartbeat(ctx context.Context, ballot *desc.Ballot) {
 	if len(confirmed) >= 2 {
 		n.electionDeadline = time.Now().Add(heartbeatTimeout)
 	} else if time.Now().After(n.electionDeadline) {
-		n.role, n.leaderGRPCAddress = config.REPLICA, ""
+		n.role, n.leaderGRPCAddress, n.ready = config.REPLICA, "", false
 		n.resetElectionTimeout()
 		logger.GetLogger(n.ctx).Warn(n.ctx, "Stepped down after losing heartbeat majority")
 	}
