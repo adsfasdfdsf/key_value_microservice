@@ -21,7 +21,7 @@ type Storage struct {
 var _ storagenode.OuterStorage = (*Storage)(nil)
 
 func New(baseURL string) *Storage {
-	return &Storage{baseURL: strings.TrimRight(baseURL, "/"), client: &http.Client{Timeout: 10 * time.Second}}
+	return &Storage{baseURL: strings.TrimRight(baseURL, "/"), client: &http.Client{Timeout: 20 * time.Second}}
 }
 
 func (s *Storage) GetUserData(user string) ([]models.KeyValue, error) {
@@ -31,7 +31,7 @@ func (s *Storage) GetUserData(user string) ([]models.KeyValue, error) {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get user values: storage returned HTTP %d", response.StatusCode)
+		return nil, &HTTPError{Status: response.StatusCode}
 	}
 	var data struct {
 		User   string            `json:"user"`
@@ -66,7 +66,11 @@ func (s *Storage) AddValue(user, key, value string) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("add value: storage returned HTTP %d", response.StatusCode)
+		return &HTTPError{Status: response.StatusCode}
 	}
 	return nil
 }
+
+type HTTPError struct{ Status int }
+
+func (e *HTTPError) Error() string { return fmt.Sprintf("storage returned HTTP %d", e.Status) }
