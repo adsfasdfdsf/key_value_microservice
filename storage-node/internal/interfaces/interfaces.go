@@ -18,3 +18,11 @@ type ConsensusStore interface {
 	LoadPromisedBallot(context.Context) (*desc.Ballot, error)
 	TryPromise(context.Context, *desc.Ballot) (bool, *desc.Ballot, error)
 }
+
+type JournalStore interface {
+	ConsensusStore
+	ReadJournal(context.Context) ([]*desc.LogEntry, uint64, error)
+	AcceptEntries(context.Context, *desc.AcceptEntriesRequest) error
+	CommitEntries(context.Context, *desc.CommitEntriesRequest) error
+	ReadRecords(context.Context) ([]*desc.Record, error)
+}
