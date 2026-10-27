@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package node_v1;
 
-option go_package = "gitlab.com/adsfasdfdsf-group/key-value-service/storage-node/pkg/grpc/node_v1;node_v1";
+option go_package = "gitlab.com/adsfasdfdsf-group/key-value-service/pkg/node_v1;node_v1";
 
 service NodeService {
     rpc StartElection(StartElectionRequest) returns (StartElectionResponse);
@@ -10,6 +10,8 @@ service NodeService {
     rpc Prepare(PrepareRequest) returns (PrepareResponse);
     rpc SubmitValue(AppendValueRequest) returns (AppendValueResponse);
     rpc AppendValue(AppendValueRequest) returns (AppendValueResponse);
+    rpc AcceptEntries(AcceptEntriesRequest) returns (JournalResponse);
+    rpc CommitEntries(CommitEntriesRequest) returns (JournalResponse);
 }
 
 message AppendValueRequest {
@@ -36,6 +38,9 @@ message PrepareResponse {
     bool promised = 1;
     Ballot promised_ballot = 2;
     string node_id = 3;
+    repeated LogEntry entries = 4;
+    uint64 committed_index = 5;
+    repeated Record records = 6;
 }
 
 message StartElectionRequest {}
@@ -48,10 +53,48 @@ message StartElectionResponse {
 message AnnounceLeaderRequest {
     Ballot ballot = 1;
     string leader_grpc_address = 2;
+    uint64 committed_index = 3;
 }
 
 message AnnounceLeaderResponse {
     bool accepted = 1;
     Ballot promised_ballot = 2;
     string node_id = 3;
+    uint64 committed_index = 4;
+}
+
+message Record {
+    string user = 1;
+    string key = 2;
+    string value = 3;
+}
+
+message LogEntry {
+    uint64 index = 1;
+    Ballot ballot = 2;
+    string user = 3;
+    string key = 4;
+    string value = 5;
+    bool noop = 6;
+    bool snapshot = 7;
+    repeated Record records = 8;
+}
+
+message AcceptEntriesRequest {
+    Ballot ballot = 1;
+    repeated LogEntry entries = 2;
+    bool replace_tail = 3;
+    uint64 last_index = 4;
+}
+
+message CommitEntriesRequest {
+    Ballot ballot = 1;
+    uint64 through_index = 2;
+}
+
+message JournalResponse {
+    bool accepted = 1;
+    Ballot promised_ballot = 2;
+    string node_id = 3;
+    uint64 committed_index = 4;
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,7 +22,14 @@ func New(ctx context.Context, dsn string) (*Storage, error) {
 		db.Close()
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
-	return &Storage{db: db}, nil
+	storage := &Storage{db: db}
+	recoveryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := storage.Restore(recoveryCtx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("restore state: %w", err)
+	}
+	return storage, nil
 }
 
 func (s *Storage) Close() { s.db.Close() }
@@ -48,7 +56,7 @@ func (s *Storage) GetAll(ctx context.Context, user string) (map[string]string, e
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	result := make(map[string]string)
 	for rows.Next() {
 		var key, value string
