@@ -4,13 +4,11 @@ import UserApi from "../../api/UserApi"
 
 
 export default function SignUp() {
-    const [values, setValues] = useState({});
+    const [error, setError] = useState("");
+    const [pending, setPending] = useState(false);
     const navigate = useNavigate();
     const [showPassword, setShowPassword] = useState(false);
     const [showPasswordRepeat, setShowPasswordRepeat] = useState(false);
-    const handleChange = (e) => {
-        setValues({...values, [e.target.name]: e.target.value});
-    }
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -18,30 +16,37 @@ export default function SignUp() {
         const form = e.target;
         const formData = new FormData(form);
         if (formData.get("password") !== formData.get("repeatPassword")) {
-            alert("Passwords do not match");
+            setError("Passwords do not match");
             return;
         }
 
         const api = UserApi;
 
-        await api.SignUp(formData.get("email"), formData.get("password"))
-        
-        navigate("/main")
-        // API request класс на ооп в отдельном файле с запросами с инкапсуляцией сам url в .env
-        // fetch! или axios и в логин тож самое
-        // TODO passwords do not match
+        setError("");
+        setPending(true);
+        try {
+            await api.SignUp(formData.get("email"), formData.get("password"));
+            navigate("/main");
+        } catch (failure) {
+            setError(failure.message);
+        } finally {
+            setPending(false);
+        }
+
+
 
     }
 
     return <>
                 <h2 className="text-[#518592] font-bold text-2xl">Sign up</h2>
                 <p className="text-[#518592] text-sm mt-4">If you are not a member, sign up</p>
+                {error && <p role="alert" className="text-red-700">{error}</p>}
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4" >
-                    <input onChange={handleChange} className="p-2 mt-8 rounded-xl border placeholder:opacity-50 " type="email" placeholder="email@mail.com" name="email" required />
+                    <input className="p-2 mt-8 rounded-xl border placeholder:opacity-50 " type="email" placeholder="email@mail.com" name="email" required />
 
                     <div className="relative">
-                        <input onChange={handleChange} className="p-2 rounded-xl border w-full placeholder:opacity-50 "
-                         type={showPassword ? "text" : "password"} placeholder="password" name="password" required />
+                        <input className="p-2 rounded-xl border w-full placeholder:opacity-50 "
+                         type={showPassword ? "text" : "password"} placeholder="password" name="password" minLength={8} maxLength={72} required />
                         <button 
                         type="button"
                         className="absolute top-1/2 right-6 -translate-y-1/2"
@@ -63,7 +68,7 @@ export default function SignUp() {
                     </div>
 
                     <div className="relative">
-                        <input onChange={handleChange} className="p-2 rounded-xl border w-full placeholder:opacity-50 "
+                        <input className="p-2 rounded-xl border w-full placeholder:opacity-50 "
                          type={showPasswordRepeat ? "text" : "password"} placeholder="repeat password" name="repeatPassword" required />
                         <button 
                         type="button"
@@ -85,7 +90,7 @@ export default function SignUp() {
                         </button>
                     </div>
 
-                    <button className="bg-[#518592] rounded-xl text-white py-2 hover:scale-105 duration-300">Sign up</button>
+                    <button disabled={pending} className="bg-[#518592] rounded-xl text-white py-2 hover:scale-105 duration-300">Sign up</button>
                 </form>
 
                 <div className="mt-10 grid grid-cols-3 items-center text-gray-500 ">

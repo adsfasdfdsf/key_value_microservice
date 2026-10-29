@@ -43,17 +43,18 @@ func main() {
 	s := userserver.New(ctx, "1128", repo, nodestorage.New(cfg.StorageURL), tokens)
 	mainLogger.Info(ctx, "serverStarted")
 
-	go func() {
-		if err = s.Run(); err != nil {
-			mainLogger.Error(ctx, "Server start failed")
-			return
-		}
-	}()
-
+	failures := make(chan error, 1)
+	go func() { failures <- s.Run() }()
 	graceCh := make(chan os.Signal, 1)
 	signal.Notify(graceCh, syscall.SIGINT, syscall.SIGTERM)
-
-	<-graceCh
+	defer signal.Stop(graceCh)
+	select {
+	case <-graceCh:
+	case runErr := <-failures:
+		if runErr != nil {
+			mainLogger.Error(ctx, "Server failed: "+runErr.Error())
+		}
+	}
 
 	if err = s.Stop(); err != nil {
 		mainLogger.Error(ctx, "Graceful shutdown failed")

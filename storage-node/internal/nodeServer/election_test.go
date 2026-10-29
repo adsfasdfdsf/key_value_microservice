@@ -3,6 +3,8 @@ package nodeServer
 import (
 	"context"
 	"errors"
+	"fmt"
+	"google.golang.org/protobuf/proto"
 	"net"
 	"sync"
 	"testing"
@@ -19,9 +21,11 @@ import (
 
 type promiseStore struct {
 	*map_storage.MapStorage
-	mu      sync.Mutex
-	promise *desc.Ballot
-	err     error
+	mu        sync.Mutex
+	promise   *desc.Ballot
+	err       error
+	entries   []*desc.LogEntry
+	committed uint64
 }
 
 func (s *promiseStore) LoadPromisedBallot(context.Context) (*desc.Ballot, error) {
@@ -80,7 +84,7 @@ func testCluster(t *testing.T) ([]*Node, []*grpc.Server) {
 
 func TestPrepare(t *testing.T) {
 	store := &promiseStore{MapStorage: map_storage.New()}
-	n := &Node{id: "node-1", role: config.MASTER, consensusStore: store}
+	n := &Node{id: "node-1", role: config.MASTER, consensusStore: store, journalStore: store}
 	ctx := context.Background()
 	ballot := &desc.Ballot{Round: 7, NodeId: "node-2"}
 	for _, tc := range []struct {
@@ -202,4 +206,77 @@ func TestHeartbeat(t *testing.T) {
 	if follower.Role() != config.REPLICA {
 		t.Fatal("leader kept its role without a heartbeat majority")
 	}
+}
+
+func (s *promiseStore) ReadJournal(context.Context) ([]*desc.LogEntry, uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := []*desc.LogEntry{}
+	for _, entry := range s.entries {
+		result = append(result, proto.Clone(entry).(*desc.LogEntry))
+	}
+	return result, s.committed, s.err
+}
+func (s *promiseStore) ReadRecords(context.Context) ([]*desc.Record, error) {
+	return []*desc.Record{}, nil
+}
+func (s *promiseStore) AcceptEntries(_ context.Context, req *desc.AcceptEntriesRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	if compareBallots(s.promise, req.Ballot) != 0 {
+		return fmt.Errorf("stale ballot")
+	}
+	for _, entry := range req.Entries {
+		if entry.Index == 0 || entry.Index > uint64(len(s.entries))+1 {
+			return fmt.Errorf("gap")
+		}
+		if entry.Index <= uint64(len(s.entries)) {
+			old := s.entries[entry.Index-1]
+			a, b := proto.Clone(old).(*desc.LogEntry), proto.Clone(entry).(*desc.LogEntry)
+			a.Ballot, b.Ballot = nil, nil
+			if (entry.Index <= s.committed || compareBallots(old.Ballot, entry.Ballot) == 0) && !proto.Equal(a, b) {
+				return fmt.Errorf("conflict")
+			}
+			s.entries[entry.Index-1] = proto.Clone(entry).(*desc.LogEntry)
+		} else {
+			s.entries = append(s.entries, proto.Clone(entry).(*desc.LogEntry))
+		}
+	}
+	if req.ReplaceTail {
+		if req.LastIndex < s.committed || req.LastIndex > uint64(len(s.entries)) {
+			return fmt.Errorf("invalid truncation")
+		}
+		s.entries = s.entries[:req.LastIndex]
+	}
+	return nil
+}
+func (s *promiseStore) CommitEntries(ctx context.Context, req *desc.CommitEntriesRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	if compareBallots(s.promise, req.Ballot) != 0 || req.ThroughIndex > uint64(len(s.entries)) {
+		return fmt.Errorf("invalid commit")
+	}
+	for i := s.committed; i < req.ThroughIndex; i++ {
+		entry := s.entries[i]
+		if !entry.Noop && !entry.Snapshot {
+			if err := s.MapStorage.Add(ctx, entry.User, entry.Key, entry.Value); err != nil {
+				return err
+			}
+		}
+		for _, record := range entry.Records {
+			if err := s.MapStorage.Add(ctx, record.User, record.Key, record.Value); err != nil {
+				return err
+			}
+		}
+	}
+	if req.ThroughIndex > s.committed {
+		s.committed = req.ThroughIndex
+	}
+	return nil
 }

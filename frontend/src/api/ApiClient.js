@@ -50,7 +50,13 @@ export class ApiClient {
             setAccessToken(null);
             throw new Error("Unauthorized");
         }
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
+        if (!response.ok) {
+            if (response.status === 503) throw new Error("Хранилище выбирает лидера или восстанавливается. Повторите запрос немного позже.");
+            if (response.status === 401 && isAuthRequest) throw new Error("Неверный email или пароль.");
+            if (response.status === 409) throw new Error("Пользователь с таким email уже существует.");
+            if (response.status === 400) throw new Error("Проверьте введённые данные.");
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
         return response;
     }
 
@@ -70,7 +76,10 @@ export class ApiClient {
             setAccessToken(null);
             return false;
         }
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
+        if (!response.ok) {
+            if (response.status === 503) throw new Error("Хранилище выбирает лидера или восстанавливается. Повторите запрос немного позже.");
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
         const data = await response.json();
         setAccessToken(data.accessToken);
         return true;
@@ -82,7 +91,7 @@ export class ApiClient {
     }
 }
 
-export const sessionApi = new ApiClient("http://localhost:1128");
+export const sessionApi = new ApiClient(import.meta.env.VITE_API_URL || "");
 export async function restoreSession() {
     updateStatus("checking");
     try { await sessionApi.refresh(); }

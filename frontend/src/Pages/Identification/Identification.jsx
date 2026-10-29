@@ -9,7 +9,7 @@ export default function Home({showRegistrageionWindow}) {
 
 
 
-  const changeForm = (e) => {
+  const changeForm = () => {
     setIsAnimating(true);
     setMoveImage(prev => !prev);
 
